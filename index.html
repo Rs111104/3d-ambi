@@ -141,6 +141,37 @@
       user-select: none;
     }
 
+    .recovery-msg {
+      display: none;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .recovery-msg.active {
+      display: block;
+    }
+
+    .overlay-msg {
+      display: none;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      background: #ffffff;
+      text-align: center;
+    }
+
+    .overlay-msg.active {
+      display: block;
+    }
+
+    .angle-readout {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+    }
+
     canvas {
       width: 100%;
       height: auto;
@@ -168,6 +199,35 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
       user-select: none;
+    }
+
+    .question-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .circle-timer {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: conic-gradient(#111827 360deg, #eef2f7 0deg);
+      color: #111827;
+      font-weight: 600;
+    }
+
+    .fade-swap {
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .phone-diagram {
+      width: 100%;
+      max-width: 260px;
+      align-self: center;
     }
 
     .answer-btn {
@@ -219,9 +279,11 @@
 
     <section id="screen-start" class="screen active">
       <div class="card">
-        <h1>Candidate Check-In</h1>
+        <h1>3D Ambigram Assessment</h1>
+        <p>This assessment uses your camera or phone motion to keep exam questions visible only from your direct viewing angle.</p>
         <label for="candidateName">Name</label>
         <input id="candidateName" type="text" placeholder="Your name" autocomplete="name" />
+        <button id="resumeBtn" style="display:none;">Resume your session</button>
         <button id="beginBtn">Begin</button>
       </div>
     </section>
@@ -229,18 +291,53 @@
     <section id="screen-calibrate" class="screen">
       <div class="card">
         <h1>Calibration</h1>
-        <p>Look straight at the camera. Calibration completes in <span id="calibTimer">3</span> seconds.</p>
+        <p>Hold still, looking straight ahead. Calibration completes in <span id="calibTimer">3</span> seconds.</p>
+        <div class="angle-readout" id="calibAngle">Angle: 0.0 deg</div>
         <div class="timer">
           <div class="timer-bar" id="calibBar"></div>
         </div>
       </div>
     </section>
 
+    <section id="screen-liveness" class="screen">
+      <div class="card">
+        <h1>Liveness Check</h1>
+        <p id="livenessPrompt">Slowly turn your head left, then right.</p>
+        <div class="angle-readout" id="livenessAngle">Angle: 0.0 deg</div>
+        <div class="timer">
+          <div class="timer-bar" id="livenessBar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-mobile" class="screen">
+      <div class="card">
+        <h1>Phone Position</h1>
+        <svg class="phone-diagram" viewBox="0 0 260 160" role="img" aria-label="Hold phone upright at eye level">
+          <rect x="105" y="20" width="50" height="100" rx="8" fill="#111827"/>
+          <rect x="112" y="30" width="36" height="78" rx="3" fill="#ffffff"/>
+          <circle cx="130" cy="114" r="3" fill="#ffffff"/>
+          <path d="M52 82h48M160 82h48" stroke="#6b7280" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="40" cy="82" r="15" fill="none" stroke="#111827" stroke-width="5"/>
+          <circle cx="220" cy="82" r="15" fill="none" stroke="#111827" stroke-width="5"/>
+        </svg>
+        <p>Hold your phone upright at eye level, directly in front of your face.</p>
+        <button id="mobileContinueBtn">Continue</button>
+      </div>
+    </section>
+
     <section id="screen-test" class="screen">
       <div class="test-layout">
+        <div class="question-meta">
+          <div id="progressText">Question 1 of 10</div>
+          <div class="circle-timer" id="circleTimer">20</div>
+        </div>
         <div class="canvas-wrap">
           <canvas id="glCanvas" width="960" height="540" aria-label="Angle dependent question renderer"></canvas>
         </div>
+        <div class="recovery-msg" id="recoveryMsg">Please look at the screen</div>
+        <div class="overlay-msg" id="livenessMsg">Please move your head slightly to continue.</div>
+        <div class="overlay-msg" id="captureMsg">Screen recording has been detected and logged.</div>
         <div class="timer">
           <div class="timer-bar" id="timerBar"></div>
         </div>
@@ -251,6 +348,15 @@
     <section id="screen-complete" class="screen">
       <div class="card">
         <h1>Test complete. Thank you.</h1>
+        <p id="resultText"></p>
+      </div>
+    </section>
+
+    <section id="screen-error" class="screen">
+      <div class="card">
+        <h1>Something went wrong</h1>
+        <p id="errorText"></p>
+        <button id="reloadBtn">Reload and continue</button>
       </div>
     </section>
   </main>
@@ -264,22 +370,45 @@
       const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
       const screens = {
         start: document.getElementById("screen-start"),
+        liveness: document.getElementById("screen-liveness"),
         calibrate: document.getElementById("screen-calibrate"),
+        mobile: document.getElementById("screen-mobile"),
         test: document.getElementById("screen-test"),
-        complete: document.getElementById("screen-complete")
+        complete: document.getElementById("screen-complete"),
+        error: document.getElementById("screen-error")
       };
 
       const statusDot = document.getElementById("statusDot");
       const statusText = document.getElementById("statusText");
       const candidateName = document.getElementById("candidateName");
       const beginBtn = document.getElementById("beginBtn");
+      const resumeBtn = document.getElementById("resumeBtn");
+      const mobileContinueBtn = document.getElementById("mobileContinueBtn");
       const calibTimer = document.getElementById("calibTimer");
+      const calibAngle = document.getElementById("calibAngle");
       const calibBar = document.getElementById("calibBar");
+      const livenessPrompt = document.getElementById("livenessPrompt");
+      const livenessAngle = document.getElementById("livenessAngle");
+      const livenessBar = document.getElementById("livenessBar");
       const timerBar = document.getElementById("timerBar");
+      const progressText = document.getElementById("progressText");
+      const circleTimer = document.getElementById("circleTimer");
+      const resultText = document.getElementById("resultText");
+      const errorText = document.getElementById("errorText");
+      const reloadBtn = document.getElementById("reloadBtn");
       const answerButtons = document.getElementById("answerButtons");
+      const recoveryMsg = document.getElementById("recoveryMsg");
+      const livenessMsg = document.getElementById("livenessMsg");
+      const captureMsg = document.getElementById("captureMsg");
 
       const canvas = document.getElementById("glCanvas");
+      const canvasWrap = document.querySelector(".canvas-wrap");
       const inputVideo = document.getElementById("inputVideo");
+      const params = new URLSearchParams(location.search);
+      const setId = params.get("set") || "";
+      const inviteToken = params.get("invite") || "";
+      const isSmallScreen = window.innerWidth < 768;
+      let isMobile = isSmallScreen || matchMedia("(pointer: coarse)").matches;
 
       const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
       if (!gl) {
@@ -295,7 +424,10 @@
       let questionStart = 0;
       let timerId = null;
       let questionNumber = 0;
-      const maxQuestions = 10;
+      let maxQuestions = 10;
+      let correctCount = 0;
+      let sessionStartedAt = 0;
+      const answerQueue = [];
       let trackingAvailable = true;
       let calibrationStart = 0;
       let calibrated = false;
@@ -303,8 +435,21 @@
       let baseline = 0;
       let angleDeg = 0;
       const maxAngle = 45;
-      const transition = 10;
-      const validZone = 12;
+      const transition = 8;
+      const validZone = 15;
+      let yawSamples = [];
+      let lastTrackingSeen = 0;
+      let recoveryMode = false;
+      let faceLostStarted = 0;
+      let faceLostLogged = false;
+      let gyroAvailable = false;
+      let usingGyro = false;
+      let livenessStage = "idle";
+      let livenessStart = 0;
+      let livenessMinYaw = 0;
+      let livenessMaxYaw = 0;
+      const landmarkWindow = [];
+      let livenessFailActive = false;
 
       let lastYawTs = 0;
       let inZoneMs = 0;
@@ -328,15 +473,31 @@
         "uniform float u_angle;\n" +
         "uniform float u_maxAngle;\n" +
         "uniform float u_transition;\n" +
+        "uniform float u_time;\n" +
+        "uniform vec2 u_resolution;\n" +
+        "float rand(vec2 co) {\n" +
+        "  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n" +
+        "}\n" +
         "void main() {\n" +
-        "  vec4 centerColor = texture2D(u_center, v_uv);\n" +
-        "  vec4 leftColor = texture2D(u_left, v_uv);\n" +
-        "  vec4 rightColor = texture2D(u_right, v_uv);\n" +
         "  float absAngle = abs(u_angle);\n" +
-        "  float blend = smoothstep(u_transition, u_maxAngle, absAngle);\n" +
-        "  vec4 mixedColor = u_angle < 0.0 ? mix(centerColor, leftColor, blend) : mix(centerColor, rightColor, blend);\n" +
-        "  float fade = 1.0 - smoothstep(u_maxAngle - 8.0, u_maxAngle, absAngle);\n" +
-        "  gl_FragColor = vec4(mixedColor.rgb * fade, 1.0);\n" +
+        "  float realVisibility = 1.0 - smoothstep(8.0, 18.0, absAngle);\n" +
+        "  float decoyVisibility = 1.0 - realVisibility;\n" +
+        "  float jitterSeed = floor(u_time * 24.0);\n" +
+        "  float jitterX = (rand(vec2(jitterSeed, floor(v_uv.y * 360.0))) * 2.0 - 1.0) * 0.003;\n" +
+        "  float jitterY = (rand(vec2(floor(v_uv.x * 360.0), jitterSeed + 17.0)) * 2.0 - 1.0) * 0.003;\n" +
+        "  vec2 jitter = vec2(jitterX, jitterY);\n" +
+        "  float parallax = decoyVisibility * (u_angle / 90.0) * 0.07;\n" +
+        "  vec4 centerColor = texture2D(u_center, v_uv);\n" +
+        "  vec4 leftColor = texture2D(u_left, v_uv + jitter + vec2(-parallax, 0.0));\n" +
+        "  vec4 rightColor = texture2D(u_right, v_uv - jitter + vec2(-parallax, 0.0));\n" +
+        "  vec4 decoyColor = u_angle < 0.0 ? leftColor : rightColor;\n" +
+        "  vec4 mixedColor = centerColor * realVisibility + decoyColor * decoyVisibility;\n" +
+        "  float grain = rand(v_uv * u_resolution + vec2(u_time * 43.0, u_angle));\n" +
+        "  vec3 noiseLayer = mixedColor.rgb + vec3(grain * 0.4 + 0.3 - 0.5);\n" +
+        "  float noiseBlend = smoothstep(35.0, 45.0, absAngle);\n" +
+        "  float polarization = pow(max(cos(radians(clamp(absAngle, 0.0, 89.0))), 0.0), 3.0);\n" +
+        "  vec3 finalColor = mix(mixedColor.rgb, clamp(noiseLayer, 0.0, 1.0), noiseBlend) * (0.35 + 0.65 * polarization);\n" +
+        "  gl_FragColor = vec4(finalColor, 1.0);\n" +
         "}\n";
 
       function createShader(type, source) {
@@ -391,6 +552,8 @@
       const uAngle = gl.getUniformLocation(program, "u_angle");
       const uMaxAngle = gl.getUniformLocation(program, "u_maxAngle");
       const uTransition = gl.getUniformLocation(program, "u_transition");
+      const uTime = gl.getUniformLocation(program, "u_time");
+      const uResolution = gl.getUniformLocation(program, "u_resolution");
 
       gl.uniform1i(uCenter, 0);
       gl.uniform1i(uLeft, 1);
@@ -472,6 +635,8 @@
         gl.uniform1f(u_angle, angleDeg);
         gl.uniform1f(u_maxAngle, maxAngle);
         gl.uniform1f(u_transition, transition);
+        gl.uniform1f(u_time, performance.now() / 1000);
+        gl.uniform2f(u_resolution, canvas.width, canvas.height);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
@@ -482,9 +647,14 @@
       }
 
       function updateStatus() {
+        if (recoveryMode) {
+          statusDot.className = "status-dot status-dot--warn";
+          statusText.textContent = "Checking connection...";
+          return;
+        }
         if (!trackingAvailable) {
           statusDot.className = "status-dot status-dot--bad";
-          statusText.textContent = "Camera unavailable";
+          statusText.textContent = isMobile ? "Motion unavailable" : "Camera unavailable";
           return;
         }
         if (!calibrated) {
@@ -513,21 +683,116 @@
       }
 
       function onYaw(rawYaw) {
+        lastTrackingSeen = performance.now();
+        if (recoveryMode) {
+          recoveryMode = false;
+          if (faceLostStarted) {
+            queueEvent("face_lost", JSON.stringify({ durationSec: Math.round((performance.now() - faceLostStarted) / 1000) }));
+          }
+          faceLostStarted = 0;
+          faceLostLogged = false;
+          recoveryMsg.classList.remove("active");
+        }
+        yawSamples.push(rawYaw);
+        if (yawSamples.length > 5) {
+          yawSamples.shift();
+        }
+        const sorted = yawSamples.slice().sort((a, b) => a - b);
+        const filteredYaw = sorted[Math.floor(sorted.length / 2)];
+        if (livenessStage === "running") {
+          updateLivenessGesture(filteredYaw);
+        }
         if (!calibrated) {
-          calibrationSamples.push(rawYaw);
+          calibrationSamples.push(filteredYaw);
           if (performance.now() - calibrationStart >= 3000) {
             finishCalibration();
           }
         }
-        angleDeg = Math.max(-maxAngle, Math.min(maxAngle, rawYaw - baseline));
+        angleDeg = Math.max(-maxAngle, Math.min(maxAngle, filteredYaw - baseline));
         const inZone = Math.abs(angleDeg) <= validZone;
-        trackCompliance(performance.now(), inZone);
+        if (!recoveryMode) {
+          trackCompliance(performance.now(), inZone);
+        }
         updateStatus();
+        calibAngle.textContent = `Angle: ${angleDeg.toFixed(1)} deg`;
+        livenessAngle.textContent = `Angle: ${filteredYaw.toFixed(1)} deg`;
         render();
+      }
+
+      function trackLandmarkVariance(lm) {
+        const sample = [33, 263, 234, 454, 1, 152].map((idx) => {
+          const p = lm[idx];
+          return [p.x, p.y, p.z || 0];
+        }).flat();
+        landmarkWindow.push({ t: performance.now(), sample });
+        while (landmarkWindow.length && performance.now() - landmarkWindow[0].t > 2000) {
+          landmarkWindow.shift();
+        }
+        if (landmarkWindow.length < 12 || !currentQuestionId) {
+          return;
+        }
+        let variance = 0;
+        for (let i = 0; i < sample.length; i += 1) {
+          const mean = landmarkWindow.reduce((sum, item) => sum + item.sample[i], 0) / landmarkWindow.length;
+          variance += landmarkWindow.reduce((sum, item) => {
+            const d = item.sample[i] - mean;
+            return sum + d * d;
+          }, 0) / landmarkWindow.length;
+        }
+        if (variance < 0.000002 && !livenessFailActive) {
+          livenessFailActive = true;
+          livenessMsg.classList.add("active");
+          queueEvent("liveness_fail", JSON.stringify({ variance }));
+        } else if (variance >= 0.000002 && livenessFailActive) {
+          livenessFailActive = false;
+          livenessMsg.classList.remove("active");
+        }
+      }
+
+      function startLivenessGesture() {
+        if (usingGyro) {
+          startCalibration();
+          return;
+        }
+        livenessStage = "running";
+        livenessStart = performance.now();
+        livenessMinYaw = 0;
+        livenessMaxYaw = 0;
+        livenessPrompt.textContent = "Slowly turn your head left, then right.";
+        showScreen("liveness");
+        const tick = () => {
+          if (livenessStage !== "running") return;
+          const elapsed = performance.now() - livenessStart;
+          livenessBar.style.width = `${Math.min(100, (elapsed / 10000) * 100)}%`;
+          if (elapsed > 10000) {
+            livenessStage = "failed";
+            queueEvent("liveness_gesture_fail");
+            livenessPrompt.textContent = "Liveness check failed. Please try again.";
+            setTimeout(startLivenessGesture, 1200);
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+
+      function updateLivenessGesture(rawYaw) {
+        livenessMinYaw = Math.min(livenessMinYaw, rawYaw);
+        livenessMaxYaw = Math.max(livenessMaxYaw, rawYaw);
+        if (livenessMinYaw < -10 && livenessMaxYaw > 10) {
+          livenessStage = "passed";
+          livenessPrompt.textContent = "Liveness confirmed.";
+          setTimeout(startCalibration, 350);
+        }
       }
 
       async function initCamera() {
         try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const hasCamera = devices.some((device) => device.kind === "videoinput");
+          if (!hasCamera) {
+            throw new Error("no_camera");
+          }
           const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
           inputVideo.srcObject = stream;
           await inputVideo.play();
@@ -540,6 +805,62 @@
           updateStatus();
           render();
           queueEvent("camera_unavailable");
+        }
+      }
+
+      function initGyro() {
+        if (!("DeviceOrientationEvent" in window)) {
+          return false;
+        }
+        usingGyro = true;
+        gyroAvailable = true;
+        trackingAvailable = true;
+        window.addEventListener("deviceorientation", (event) => {
+          const beta = typeof event.beta === "number" ? event.beta : 0;
+          const yaw = Math.max(-maxAngle, Math.min(maxAngle, beta - 90));
+          onYaw(yaw);
+        });
+        return true;
+      }
+
+      async function enableMobileTracking() {
+        if (
+          typeof DeviceOrientationEvent !== "undefined"
+          && typeof DeviceOrientationEvent.requestPermission === "function"
+        ) {
+          try {
+            const permission = await DeviceOrientationEvent.requestPermission();
+            if (permission !== "granted") {
+              trackingAvailable = false;
+              updateStatus();
+              return;
+            }
+          } catch (err) {
+            trackingAvailable = false;
+            updateStatus();
+            return;
+          }
+        }
+        if (initGyro()) {
+          startLivenessGesture();
+        } else {
+          trackingAvailable = false;
+          updateStatus();
+        }
+      }
+
+      function checkRecovery() {
+        if (!calibrated || usingGyro || !currentQuestionId || recoveryMode) {
+          return;
+        }
+        if (lastTrackingSeen && performance.now() - lastTrackingSeen > 2000) {
+          recoveryMode = true;
+          faceLostStarted = performance.now();
+          recoveryMsg.classList.add("active");
+          updateStatus();
+          if (!faceLostLogged) {
+            faceLostLogged = true;
+          }
         }
       }
 
@@ -557,18 +878,34 @@
             return;
           }
           const lm = results.multiFaceLandmarks[0];
+          trackLandmarkVariance(lm);
           const leftEye = lm[33];
           const rightEye = lm[263];
-          const nose = lm[1];
-          const midX = (leftEye.x + rightEye.x) / 2;
-          const eyeDist = Math.max(0.0001, rightEye.x - leftEye.x);
-          const yawNorm = (nose.x - midX) / eyeDist;
-          const yawDeg = Math.max(-maxAngle, Math.min(maxAngle, yawNorm * 60));
+          const leftTragion = lm[234];
+          const rightTragion = lm[454];
+          const noseTip = lm[1];
+          const chin = lm[152];
+          const pairYaw = (left, right, center, scale) => {
+            const midX = (left.x + right.x) / 2;
+            const dist = Math.max(0.0001, right.x - left.x);
+            return ((center.x - midX) / dist) * scale;
+          };
+          const eyeNose = pairYaw(leftEye, rightEye, noseTip, 60);
+          const earNose = pairYaw(leftTragion, rightTragion, noseTip, 50);
+          const eyeChin = pairYaw(leftEye, rightEye, chin, 42);
+          const earChin = pairYaw(leftTragion, rightTragion, chin, 36);
+          const eyeBalance = (((noseTip.x - leftEye.x) - (rightEye.x - noseTip.x)) / Math.max(0.0001, rightEye.x - leftEye.x)) * 38;
+          const earBalance = (((noseTip.x - leftTragion.x) - (rightTragion.x - noseTip.x)) / Math.max(0.0001, rightTragion.x - leftTragion.x)) * 32;
+          const yawDeg = Math.max(-maxAngle, Math.min(maxAngle, (eyeNose + earNose + eyeChin + earChin + eyeBalance + earBalance) / 6));
           onYaw(yawDeg);
         });
 
         const camera = new Camera(inputVideo, {
           onFrame: async () => {
+            if (setupFaceMesh.lastFrame && performance.now() - setupFaceMesh.lastFrame < 66) {
+              return;
+            }
+            setupFaceMesh.lastFrame = performance.now();
             await faceMesh.send({ image: inputVideo });
           },
           width: 640,
@@ -746,6 +1083,10 @@
           const elapsed = performance.now() - start;
           const remaining = Math.max(0, duration - elapsed);
           timerBar.style.width = `${(remaining / duration) * 100}%`;
+          const remainingSec = Math.ceil(remaining / 1000);
+          circleTimer.textContent = remainingSec.toString();
+          const color = remainingSec <= 5 ? "#dc2626" : remainingSec <= 15 ? "#f59e0b" : "#111827";
+          circleTimer.style.background = `conic-gradient(${color} ${(remaining / duration) * 360}deg, #eef2f7 0deg)`;
           if (remaining <= 0) {
             clearInterval(timerId);
             submitAnswer(-1);
@@ -761,10 +1102,14 @@
         resetComplianceTracking();
         try {
           const data = await fetchNextQuestion();
+          progressText.textContent = `Question ${questionNumber + 1} of ${data.totalQuestions || maxQuestions}`;
           currentQuestionId = data.questionId;
           currentOptions = data.options;
+          maxQuestions = data.totalQuestions || maxQuestions;
           setQuestionTextures(data);
           setAnswerButtons(currentOptions);
+          canvas.classList.add("fade-swap");
+          setTimeout(() => canvas.classList.remove("fade-swap"), 20);
           questionStart = performance.now();
           startTimer(data.timeLimit || 20);
         } catch (err) {
@@ -788,13 +1133,55 @@
           headCompliance: compliance
         };
         currentQuestionId = null;
-        await fetch(`${API_BASE}/api/session/answer`, {
+        const res = await postWithRetry(`${API_BASE}/api/session/answer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
+        if (res && res.ok && answerIndex >= 0) {
+          correctCount += 1;
+        }
         questionNumber += 1;
+        saveSessionState();
         startQuestion();
+      }
+
+      async function postWithRetry(url, options) {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const res = await fetch(url, options);
+            if (res.ok) return res;
+          } catch (err) {}
+          await new Promise((resolve) => setTimeout(resolve, 250 * Math.pow(2, attempt)));
+        }
+        answerQueue.push({ url, options });
+        localStorage.setItem("ambiAnswerQueue", JSON.stringify(answerQueue));
+        return null;
+      }
+
+      async function flushAnswerQueue() {
+        const saved = JSON.parse(localStorage.getItem("ambiAnswerQueue") || "[]");
+        while (saved.length) {
+          const item = saved.shift();
+          try {
+            await fetch(item.url, item.options);
+          } catch (err) {
+            saved.unshift(item);
+            break;
+          }
+        }
+        localStorage.setItem("ambiAnswerQueue", JSON.stringify(saved));
+      }
+
+      function saveSessionState() {
+        if (!sessionToken) return;
+        localStorage.setItem("ambiSession", JSON.stringify({
+          sessionToken,
+          questionNumber,
+          maxQuestions,
+          correctCount,
+          sessionStartedAt
+        }));
       }
 
       async function startSession() {
@@ -802,23 +1189,52 @@
         const res = await fetch(`${API_BASE}/api/session/start`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ name, setId, inviteToken })
         });
+        if (!res.ok) {
+          trackingAvailable = false;
+          statusText.textContent = "Link unavailable";
+          statusDot.className = "status-dot status-dot--bad";
+          return;
+        }
         const data = await res.json();
         sessionToken = data.sessionToken || "";
-        sessionKey = data.sessionKey ? hexToBytes(data.sessionKey) : null;
+        sessionKey = data.sessionSalt ? await deriveSessionKey(sessionToken, data.sessionSalt) : null;
         questionNumber = 0;
+        correctCount = 0;
+        sessionStartedAt = Date.now();
+        saveSessionState();
         flushEvents();
-        startCalibration();
+        if (isMobile && !usingGyro) {
+          showScreen("mobile");
+        } else {
+          startLivenessGesture();
+        }
+      }
+
+      async function deriveSessionKey(token, saltHex) {
+        const secret = "local-development-session-secret-change-before-deployment";
+        const salt = hexToBytes(saltHex);
+        const input = new TextEncoder().encode(`${token}:${secret}`);
+        const saltKey = await crypto.subtle.importKey("raw", salt, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+        const prk = new Uint8Array(await crypto.subtle.sign("HMAC", saltKey, input));
+        const infoKey = await crypto.subtle.importKey("raw", prk, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+        const info = new TextEncoder().encode("3d-ambi-session-key\u0001");
+        return new Uint8Array(await crypto.subtle.sign("HMAC", infoKey, info));
       }
 
       async function completeSession() {
-        await fetch(`${API_BASE}/api/session/complete`, {
+        const res = await fetch(`${API_BASE}/api/session/complete`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionToken })
         });
         clearInterval(timerId);
+        const data = res.ok ? await res.json() : { score: maxQuestions ? correctCount / maxQuestions : 0 };
+        const score = Math.round((data.score || 0) * 100);
+        const pass = score >= 70;
+        resultText.textContent = `Score: ${score}%. ${pass ? "You passed." : "Your session has been submitted for review."}`;
+        localStorage.removeItem("ambiSession");
         showScreen("complete");
       }
 
@@ -849,6 +1265,23 @@
         }
       });
 
+      ["copy", "cut", "paste"].forEach((name) => {
+        document.addEventListener(name, (event) => {
+          event.preventDefault();
+          queueEvent("clipboard_attempt", name);
+        });
+      });
+
+      if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+        const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getDisplayMedia = async (...args) => {
+          queueEvent("screen_capture_attempt");
+          captureMsg.classList.add("active");
+          setTimeout(() => captureMsg.classList.remove("active"), 5000);
+          return originalGetDisplayMedia(...args);
+        };
+      }
+
       window.addEventListener("blur", () => {
         queueEvent("window_blur");
       });
@@ -877,9 +1310,85 @@
         startSession();
       });
 
+      resumeBtn.addEventListener("click", () => {
+        const saved = JSON.parse(localStorage.getItem("ambiSession") || "null");
+        if (!saved) return;
+        sessionToken = saved.sessionToken;
+        questionNumber = saved.questionNumber || 0;
+        maxQuestions = saved.maxQuestions || 10;
+        correctCount = saved.correctCount || 0;
+        sessionStartedAt = saved.sessionStartedAt || Date.now();
+        startLivenessGesture();
+      });
+
+      mobileContinueBtn.addEventListener("click", () => {
+        enableMobileTracking();
+      });
+
+      reloadBtn.addEventListener("click", () => location.reload());
+
+      window.addEventListener("error", (event) => {
+        errorText.textContent = `Session: ${sessionToken || "not started"}`;
+        showScreen("error");
+        fetch(`${API_BASE}/api/session/error`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionToken, message: event.message, stack: event.error && event.error.stack })
+        }).catch(() => {});
+      });
+
       updateStatus();
       render();
-      initCamera();
+      if (localStorage.getItem("ambiSession")) {
+        resumeBtn.style.display = "block";
+      }
+      setInterval(saveSessionState, 10000);
+      window.addEventListener("online", flushAnswerQueue);
+      if (inviteToken) {
+        fetch(`${API_BASE}/api/invite/${inviteToken}`)
+          .then((res) => res.ok ? res.json() : null)
+          .then((invite) => {
+            if (invite && invite.candidateName) {
+              candidateName.value = invite.candidateName;
+            }
+          })
+          .catch(() => {});
+      }
+      async function chooseTrackingMode() {
+        let hasCamera = false;
+        try {
+          if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            hasCamera = devices.some((device) => device.kind === "videoinput");
+          }
+        } catch (err) {
+          hasCamera = false;
+        }
+        const canUseGyro = "DeviceOrientationEvent" in window;
+        if ((!hasCamera || (canUseGyro && isSmallScreen)) && canUseGyro) {
+          isMobile = true;
+          statusText.textContent = "Motion ready";
+          return;
+        }
+        if (hasCamera && navigator.mediaDevices) {
+          isMobile = false;
+          initCamera();
+          return;
+        }
+        trackingAvailable = false;
+        statusText.textContent = "Motion or camera required";
+        statusDot.className = "status-dot status-dot--bad";
+      }
+      chooseTrackingMode();
+
+      setInterval(checkRecovery, 500);
+      function animationLoop() {
+        if (currentQuestionId) {
+          render();
+        }
+        requestAnimationFrame(animationLoop);
+      }
+      requestAnimationFrame(animationLoop);
 
       window.addEventListener("beforeunload", () => {
         if (sessionToken) {

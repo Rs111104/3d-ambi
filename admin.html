@@ -107,6 +107,46 @@
       background: #f9fafb;
     }
 
+    .integrity {
+      display: inline-flex;
+      min-width: 44px;
+      justify-content: center;
+      padding: 4px 8px;
+      border-radius: 8px;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .integrity.good { background: #16a34a; }
+    .integrity.warn { background: #d97706; }
+    .integrity.bad { background: #dc2626; }
+
+    .quality-low {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .check-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .check-list label {
+      color: var(--text);
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 8px;
+    }
+
     .grid {
       display: grid;
       gap: 16px;
@@ -202,12 +242,20 @@
       <div class="brand">Admin</div>
       <button class="nav-btn active" data-screen="sessions">Sessions</button>
       <button class="nav-btn" data-screen="questions">Questions</button>
+      <button class="nav-btn" data-screen="testSets">Test Sets</button>
+      <button class="nav-btn" data-screen="mobile">Mobile access</button>
       <button class="nav-btn" data-screen="settings">Settings</button>
     </aside>
     <main class="content">
       <section id="screen-sessions" class="screen active">
         <div class="panel">
           <h2>Sessions</h2>
+          <div class="row" style="margin-bottom:12px;">
+            <input id="sessionSearch" type="text" placeholder="Candidate name" />
+            <input id="sessionStatusFilter" type="text" placeholder="Status" />
+            <input id="sessionIntegrityMin" type="number" placeholder="Min integrity" />
+          </div>
+          <button id="exportSessionsBtn">Export CSV</button>
           <table class="table" id="sessionsTable">
             <thead>
               <tr>
@@ -215,7 +263,7 @@
                 <th>Start</th>
                 <th>Duration</th>
                 <th>Score</th>
-                <th>Status</th>
+                <th>Integrity</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -224,6 +272,7 @@
         <div class="panel" id="sessionDetail" style="display:none;">
           <h2>Session Detail</h2>
           <div id="detailMeta" class="muted"></div>
+          <div id="detailIntegrity" style="margin-top:10px;"></div>
           <div class="row" style="margin-top:10px;">
             <button id="markCleared">Mark cleared</button>
             <button id="markEscalated">Mark escalated</button>
@@ -256,9 +305,93 @@
         </div>
       </section>
 
+      <section id="screen-testSets" class="screen">
+        <div class="panel">
+          <h2>Test Sets</h2>
+          <table class="table" id="testSetsTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Questions</th>
+                <th>Link</th>
+                <th>Invite</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel">
+          <h2>Create Test Set</h2>
+          <label>Name</label>
+          <input id="setName" type="text" />
+          <label>Description</label>
+          <textarea id="setDescription"></textarea>
+          <div class="grid grid-2">
+            <div>
+              <label>Time limit override (seconds)</label>
+              <input id="setTimeOverride" type="number" min="5" />
+            </div>
+            <div>
+              <label>Passing threshold override (0 to 1)</label>
+              <input id="setPassingOverride" type="number" min="0" max="1" step="0.01" />
+            </div>
+          </div>
+          <label>Questions</label>
+          <div id="setQuestionList" class="check-list"></div>
+          <button id="createSetBtn">Create set</button>
+          <div id="setMsg" class="muted"></div>
+        </div>
+        <div class="panel" id="invitePanel" style="display:none;">
+          <h2>Invites</h2>
+          <div class="row">
+            <input id="inviteName" type="text" placeholder="Candidate name" />
+            <button id="createInviteBtn">Create invite</button>
+          </div>
+          <div id="inviteMsg" class="muted"></div>
+          <table class="table" id="invitesTable">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Link</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <h3>Timeline</h3>
+          <div id="sessionTimeline" class="row" style="align-items:stretch; flex-wrap:wrap;"></div>
+          <h3>Admin Notes</h3>
+          <textarea id="noteText"></textarea>
+          <button id="saveNoteBtn">Save note</button>
+          <div id="notesList" class="muted"></div>
+        </div>
+        <div class="panel">
+          <h2>Live Sessions</h2>
+          <table class="table" id="liveSessionsTable">
+            <thead><tr><th>Name</th><th>Question</th><th>Elapsed</th><th>Compliance</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="screen-mobile" class="screen">
+        <div class="panel">
+          <h2>Mobile Access</h2>
+          <button id="showMobileAccessBtn">Show QR code</button>
+          <div id="mobileAccessUrl" class="muted" style="margin-top:12px;"></div>
+          <div id="qrCode" style="margin-top:16px;"></div>
+        </div>
+      </section>
+
       <section id="screen-questions" class="screen">
         <div class="panel">
           <h2>Questions</h2>
+          <div class="row" style="margin-bottom:12px;">
+            <input id="questionSearch" type="text" placeholder="Search questions" />
+            <input id="questionCategoryFilter" type="text" placeholder="Category" />
+            <input id="questionDifficultyFilter" type="text" placeholder="Difficulty" />
+          </div>
           <table class="table" id="questionsTable">
             <thead>
               <tr>
@@ -334,6 +467,7 @@
     </main>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
     (() => {
       const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
@@ -348,20 +482,48 @@
       const screens = {
         sessions: document.getElementById("screen-sessions"),
         questions: document.getElementById("screen-questions"),
+        testSets: document.getElementById("screen-testSets"),
+        mobile: document.getElementById("screen-mobile"),
         settings: document.getElementById("screen-settings")
       };
 
       const sessionsTable = document.getElementById("sessionsTable").querySelector("tbody");
+      const exportSessionsBtn = document.getElementById("exportSessionsBtn");
+      const sessionSearch = document.getElementById("sessionSearch");
+      const sessionStatusFilter = document.getElementById("sessionStatusFilter");
+      const sessionIntegrityMin = document.getElementById("sessionIntegrityMin");
+      const liveSessionsTable = document.getElementById("liveSessionsTable").querySelector("tbody");
       const sessionDetail = document.getElementById("sessionDetail");
       const detailMeta = document.getElementById("detailMeta");
+      const detailIntegrity = document.getElementById("detailIntegrity");
       const markCleared = document.getElementById("markCleared");
       const markEscalated = document.getElementById("markEscalated");
       const reviewMsg = document.getElementById("reviewMsg");
       const answersTable = document.getElementById("answersTable").querySelector("tbody");
       const eventsTable = document.getElementById("eventsTable").querySelector("tbody");
+      const sessionTimeline = document.getElementById("sessionTimeline");
+      const noteText = document.getElementById("noteText");
+      const saveNoteBtn = document.getElementById("saveNoteBtn");
+      const notesList = document.getElementById("notesList");
       const questionsTable = document.getElementById("questionsTable").querySelector("tbody");
       const questionDetail = document.getElementById("questionDetail");
       const questionDetailBody = document.getElementById("questionDetailBody");
+      const questionSearch = document.getElementById("questionSearch");
+      const questionCategoryFilter = document.getElementById("questionCategoryFilter");
+      const questionDifficultyFilter = document.getElementById("questionDifficultyFilter");
+      const testSetsTable = document.getElementById("testSetsTable").querySelector("tbody");
+      const setName = document.getElementById("setName");
+      const setDescription = document.getElementById("setDescription");
+      const setTimeOverride = document.getElementById("setTimeOverride");
+      const setPassingOverride = document.getElementById("setPassingOverride");
+      const setQuestionList = document.getElementById("setQuestionList");
+      const createSetBtn = document.getElementById("createSetBtn");
+      const setMsg = document.getElementById("setMsg");
+      const invitePanel = document.getElementById("invitePanel");
+      const inviteName = document.getElementById("inviteName");
+      const createInviteBtn = document.getElementById("createInviteBtn");
+      const inviteMsg = document.getElementById("inviteMsg");
+      const invitesTable = document.getElementById("invitesTable").querySelector("tbody");
 
       const qSubject = document.getElementById("qSubject");
       const qDifficulty = document.getElementById("qDifficulty");
@@ -376,6 +538,9 @@
       const setCompliance = document.getElementById("setCompliance");
       const setEvents = document.getElementById("setEvents");
       const saveSettings = document.getElementById("saveSettings");
+      const showMobileAccessBtn = document.getElementById("showMobileAccessBtn");
+      const mobileAccessUrl = document.getElementById("mobileAccessUrl");
+      const qrCode = document.getElementById("qrCode");
 
       const pwCurrent = document.getElementById("pwCurrent");
       const pwNew = document.getElementById("pwNew");
@@ -384,9 +549,32 @@
 
       let adminToken = "";
       let selectedSessionToken = "";
+      let allQuestions = [];
+      let selectedSetId = "";
+      let cachedSessions = [];
 
       function authHeaders() {
         return { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` };
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (ch) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "\"": "&quot;",
+          "'": "&#39;"
+        }[ch]));
+      }
+
+      function integrityBadge(score) {
+        const cls = score >= 80 ? "good" : score >= 50 ? "warn" : "bad";
+        return `<span class="integrity ${cls}">${score}</span>`;
+      }
+
+      function qualityBadge(score) {
+        const cls = score < 7 ? "quality-low" : "status-pill";
+        return `<span class="${cls}">Quality ${score}/10</span>`;
       }
 
       function showScreen(name) {
@@ -425,15 +613,28 @@
       async function loadSessions() {
         sessionsTable.innerHTML = "";
         const res = await fetch(`${API_BASE}/api/admin/sessions`, { headers: authHeaders() });
-        const data = await res.json();
+        cachedSessions = await res.json();
+        renderSessions();
+      }
+
+      function renderSessions() {
+        const term = sessionSearch.value.trim().toLowerCase();
+        const status = sessionStatusFilter.value.trim().toLowerCase();
+        const minIntegrity = parseInt(sessionIntegrityMin.value || "0", 10);
+        const data = cachedSessions.filter((item) => {
+          return (!term || item.name.toLowerCase().includes(term))
+            && (!status || item.status.toLowerCase().includes(status))
+            && ((item.integrityScore || 0) >= minIntegrity);
+        });
+        sessionsTable.innerHTML = "";
         data.forEach((item) => {
           const row = document.createElement("tr");
           row.innerHTML = `
-            <td>${item.name}</td>
+            <td>${escapeHtml(item.name)}</td>
             <td>${new Date(item.startedAt * 1000).toLocaleString()}</td>
             <td>${Math.round(item.durationSec / 60)} min</td>
             <td>${Math.round(item.score * 100)}%</td>
-            <td><span class="status-pill">${item.status}</span></td>
+            <td>${integrityBadge(item.integrityScore || 0)}</td>
           `;
           row.addEventListener("click", () => loadSessionDetail(item.token, item.name));
           sessionsTable.appendChild(row);
@@ -447,12 +648,13 @@
         const data = await res.json();
         sessionDetail.style.display = "block";
         detailMeta.textContent = `Candidate: ${name}`;
+        detailIntegrity.innerHTML = `Integrity Score: ${integrityBadge(data.integrityScore || 0)}`;
         answersTable.innerHTML = "";
         data.answers.forEach((ans) => {
           const row = document.createElement("tr");
           row.innerHTML = `
-            <td>${ans.question}</td>
-            <td>${ans.answerIndex >= 0 ? ans.options[ans.answerIndex] : "No answer"}</td>
+            <td>${escapeHtml(ans.question)}</td>
+            <td>${escapeHtml(ans.answerIndex >= 0 ? ans.options[ans.answerIndex] : "No answer")}</td>
             <td>${ans.correct ? "Yes" : "No"}</td>
             <td>${Math.round(ans.timeMs / 1000)}s</td>
             <td>${Math.round(ans.headCompliance * 100)}%</td>
@@ -463,11 +665,39 @@
         data.events.forEach((evt) => {
           const row = document.createElement("tr");
           row.innerHTML = `
-            <td>${evt.type}</td>
-            <td>${evt.detail || ""}</td>
+            <td>${escapeHtml(evt.type)}</td>
+            <td>${escapeHtml(evt.detail || "")}</td>
             <td>${new Date(evt.createdAt * 1000).toLocaleString()}</td>
           `;
           eventsTable.appendChild(row);
+        });
+        sessionTimeline.innerHTML = "";
+        data.answers.forEach((ans, index) => {
+          const block = document.createElement("div");
+          const color = ans.headCompliance >= 0.8 ? "#dcfce7" : ans.headCompliance >= 0.6 ? "#fef3c7" : "#fee2e2";
+          block.style.cssText = `min-width:80px;padding:8px;border-radius:8px;background:${color};border:1px solid var(--border);`;
+          block.textContent = `Q${index + 1}`;
+          sessionTimeline.appendChild(block);
+        });
+        data.events.forEach((evt) => {
+          const tick = document.createElement("div");
+          tick.style.cssText = "padding:8px;border-radius:8px;background:#e0e7ff;border:1px solid var(--border);";
+          tick.textContent = evt.type;
+          sessionTimeline.appendChild(tick);
+        });
+        notesList.innerHTML = (data.notes || []).map((n) => `<div>${new Date(n.createdAt * 1000).toLocaleString()}: ${escapeHtml(n.note)}</div>`).join("");
+      }
+
+      async function loadLiveSessions() {
+        if (!adminToken) return;
+        const res = await fetch(`${API_BASE}/api/admin/live-sessions`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        liveSessionsTable.innerHTML = "";
+        data.forEach((item) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `<td>${escapeHtml(item.name)}</td><td>${item.currentQuestion}</td><td>${Math.round(item.elapsedSec / 60)} min</td><td>${Math.round(item.headCompliance * 100)}%</td>`;
+          liveSessionsTable.appendChild(row);
         });
       }
 
@@ -475,28 +705,54 @@
         questionsTable.innerHTML = "";
         const res = await fetch(`${API_BASE}/api/admin/questions`, { headers: authHeaders() });
         const data = await res.json();
+        allQuestions = data;
+        renderSetQuestionList();
+        renderQuestions();
+      }
+
+      function renderQuestions() {
+        const term = questionSearch.value.trim().toLowerCase();
+        const category = questionCategoryFilter.value.trim().toLowerCase();
+        const difficulty = questionDifficultyFilter.value.trim().toLowerCase();
+        questionsTable.innerHTML = "";
+        const data = allQuestions.filter((q) => {
+          return (!term || q.question.toLowerCase().includes(term))
+            && (!category || q.subject.toLowerCase().includes(category))
+            && (!difficulty || q.difficulty.toLowerCase().includes(difficulty));
+        });
         data.forEach((q) => {
           const row = document.createElement("tr");
           row.innerHTML = `
             <td>${q.id}</td>
-            <td>${q.subject}</td>
-            <td>${q.difficulty}</td>
-            <td>${q.question}</td>
+            <td>${escapeHtml(q.subject)}</td>
+            <td>${escapeHtml(q.difficulty)}</td>
+            <td>${escapeHtml(q.question)}</td>
           `;
           row.addEventListener("click", () => {
             questionDetail.style.display = "block";
             questionDetailBody.innerHTML = `
-              <div><strong>Question:</strong> ${q.question}</div>
-              <div><strong>Options:</strong> ${q.options.join(" | ")}</div>
-              <div><strong>Correct:</strong> ${q.options[q.correctIndex] || ""}</div>
-              <div><strong>Decoy Left:</strong> ${q.decoyLeft.question}</div>
-              <div><strong>Decoy Left Options:</strong> ${q.decoyLeft.options.join(" | ")}</div>
-              <div><strong>Decoy Right:</strong> ${q.decoyRight.question}</div>
-              <div><strong>Decoy Right Options:</strong> ${q.decoyRight.options.join(" | ")}</div>
+              <div><strong>Question:</strong> ${escapeHtml(q.question)}</div>
+              <div><strong>Options:</strong> ${escapeHtml(q.options.join(" | "))}</div>
+              <div><strong>Correct:</strong> ${escapeHtml(q.options[q.correctIndex] || "")}</div>
+              <div><strong>Decoy Left:</strong> ${escapeHtml(q.decoyLeft.question)} ${qualityBadge(q.decoyLeft.quality || 8)}</div>
+              <div><strong>Decoy Left Options:</strong> ${escapeHtml(q.decoyLeft.options.join(" | "))}</div>
+              <div><strong>Decoy Right:</strong> ${escapeHtml(q.decoyRight.question)} ${qualityBadge(q.decoyRight.quality || 8)}</div>
+              <div><strong>Decoy Right Options:</strong> ${escapeHtml(q.decoyRight.options.join(" | "))}</div>
+              <button data-regenerate="${q.id}" style="margin-top:10px;">Regenerate decoys</button>
             `;
+            questionDetailBody.querySelector("button").addEventListener("click", () => regenerateDecoys(q.id));
           });
           questionsTable.appendChild(row);
         });
+      }
+
+      async function regenerateDecoys(questionId) {
+        await fetch(`${API_BASE}/api/admin/question/regenerate-decoys`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ questionId })
+        });
+        await loadQuestions();
       }
 
       async function saveQuestion() {
@@ -571,8 +827,93 @@
 
       async function refreshAll() {
         await loadSessions();
+        await loadLiveSessions();
         await loadQuestions();
+        await loadTestSets();
         await loadSettings();
+      }
+
+      function renderSetQuestionList() {
+        setQuestionList.innerHTML = "";
+        allQuestions.forEach((q) => {
+          const label = document.createElement("label");
+          label.innerHTML = `<input type="checkbox" value="${q.id}" /> <span>${escapeHtml(q.question)}</span>`;
+          setQuestionList.appendChild(label);
+        });
+      }
+
+      async function createTestSet() {
+        const questionIds = Array.from(setQuestionList.querySelectorAll("input:checked")).map((input) => parseInt(input.value, 10));
+        const res = await fetch(`${API_BASE}/api/admin/test-set`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            name: setName.value.trim(),
+            description: setDescription.value.trim(),
+            questionIds,
+            timeLimitOverride: setTimeOverride.value ? parseInt(setTimeOverride.value, 10) : null,
+            passingThresholdOverride: setPassingOverride.value ? parseFloat(setPassingOverride.value) : null
+          })
+        });
+        setMsg.textContent = res.ok ? "Created" : "Create failed";
+        if (res.ok) {
+          setName.value = "";
+          setDescription.value = "";
+          setTimeOverride.value = "";
+          setPassingOverride.value = "";
+          setQuestionList.querySelectorAll("input").forEach((input) => { input.checked = false; });
+          await loadTestSets();
+        }
+      }
+
+      async function loadTestSets() {
+        testSetsTable.innerHTML = "";
+        const res = await fetch(`${API_BASE}/api/admin/test-sets`, { headers: authHeaders() });
+        const data = await res.json();
+        data.forEach((set) => {
+          const link = `${location.origin}/test?set=${set.id}`;
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${escapeHtml(set.name)}</td>
+            <td>${set.questionIds.length}</td>
+            <td><input value="${link}" readonly /></td>
+            <td><button data-set="${set.id}">Invite</button></td>
+          `;
+          row.querySelector("button").addEventListener("click", () => showInvites(set));
+          testSetsTable.appendChild(row);
+        });
+      }
+
+      function showInvites(set) {
+        selectedSetId = set.id;
+        invitePanel.style.display = "block";
+        renderInvites(set.invites || []);
+      }
+
+      function renderInvites(invites) {
+        invitesTable.innerHTML = "";
+        invites.forEach((invite) => {
+          const link = `${location.origin}/test?invite=${invite.token}`;
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${escapeHtml(invite.candidateName)}</td>
+            <td>${escapeHtml(invite.status)}</td>
+            <td>${Math.round((invite.score || 0) * 100)}%</td>
+            <td><input value="${link}" readonly /></td>
+          `;
+          invitesTable.appendChild(row);
+        });
+      }
+
+      async function createInvite() {
+        const res = await fetch(`${API_BASE}/api/admin/invite`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ setId: selectedSetId, candidateName: inviteName.value.trim() || "Candidate" })
+        });
+        inviteMsg.textContent = res.ok ? "Invite created" : "Invite failed";
+        inviteName.value = "";
+        await loadTestSets();
       }
 
       async function setReviewStatus(status) {
@@ -592,12 +933,59 @@
         await loadSessions();
       }
 
+      async function saveNote() {
+        if (!selectedSessionToken || !noteText.value.trim()) return;
+        await fetch(`${API_BASE}/api/admin/session/note`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ token: selectedSessionToken, note: noteText.value.trim() })
+        });
+        noteText.value = "";
+        await loadSessionDetail(selectedSessionToken, detailMeta.textContent.replace("Candidate: ", ""));
+      }
+
+      async function exportSessions() {
+        const res = await fetch(`${API_BASE}/api/admin/sessions/export`, { headers: authHeaders() });
+        if (!res.ok) {
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "completed-sessions.csv";
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      async function showMobileAccess() {
+        const res = await fetch(`${API_BASE}/api/local-access`);
+        const data = await res.json();
+        mobileAccessUrl.textContent = data.url;
+        qrCode.innerHTML = "";
+        if (window.QRCode) {
+          new QRCode(qrCode, { text: data.url, width: 180, height: 180 });
+        }
+      }
+
       loginBtn.addEventListener("click", login);
+      sessionSearch.addEventListener("input", renderSessions);
+      sessionStatusFilter.addEventListener("input", renderSessions);
+      sessionIntegrityMin.addEventListener("input", renderSessions);
+      saveNoteBtn.addEventListener("click", saveNote);
+      questionSearch.addEventListener("input", renderQuestions);
+      questionCategoryFilter.addEventListener("input", renderQuestions);
+      questionDifficultyFilter.addEventListener("input", renderQuestions);
       qSave.addEventListener("click", saveQuestion);
+      createSetBtn.addEventListener("click", createTestSet);
+      createInviteBtn.addEventListener("click", createInvite);
+      exportSessionsBtn.addEventListener("click", exportSessions);
+      showMobileAccessBtn.addEventListener("click", showMobileAccess);
       saveSettings.addEventListener("click", saveSettingsClick);
       pwSave.addEventListener("click", updatePassword);
       markCleared.addEventListener("click", () => setReviewStatus("cleared"));
       markEscalated.addEventListener("click", () => setReviewStatus("escalated"));
+      setInterval(loadLiveSessions, 10000);
     })();
   </script>
 </body>
