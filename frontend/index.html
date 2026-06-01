@@ -4,315 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Assessment Session</title>
-  <style>
-    :root {
-      --bg: #ffffff;
-      --text: #111827;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --accent: #111827;
-      --good: #16a34a;
-      --bad: #dc2626;
-      --warn: #f59e0b;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .app {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 32px 24px 48px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      min-height: 100vh;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .title {
-      font-size: 20px;
-      font-weight: 600;
-    }
-
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #d1d5db;
-    }
-
-    .status-dot--good {
-      background: var(--good);
-    }
-
-    .status-dot--bad {
-      background: var(--bad);
-    }
-
-    .status-dot--warn {
-      background: var(--warn);
-    }
-
-    .screen {
-      display: none;
-      flex: 1 1 auto;
-      align-items: center;
-      justify-content: center;
-      min-height: 420px;
-    }
-
-    .screen.active {
-      display: flex;
-    }
-
-    .card {
-      width: min(520px, 100%);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      background: #ffffff;
-    }
-
-    .card h1 {
-      font-size: 22px;
-      margin: 0;
-    }
-
-    .card p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    label {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    input[type="text"] {
-      width: 100%;
-      padding: 12px 14px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      font-size: 16px;
-    }
-
-    button {
-      padding: 12px 16px;
-      border-radius: 10px;
-      border: none;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 15px;
-      cursor: pointer;
-    }
-
-    .canvas-wrap {
-      width: 100%;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 16px;
-      background: #f9fafb;
-      user-select: none;
-      overflow: hidden;
-    }
-
-    .camera-preview {
-      width: 160px;
-      height: 120px;
-      border-radius: 8px;
-      background: #f3f4f6;
-      object-fit: cover;
-      border: 1px solid var(--border);
-    }
-
-    .recovery-msg {
-      display: none;
-      text-align: center;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .recovery-msg.active {
-      display: block;
-    }
-
-    .overlay-msg {
-      display: none;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--muted);
-      background: #ffffff;
-      text-align: center;
-    }
-
-    .overlay-msg.active {
-      display: block;
-    }
-
-    .angle-readout {
-      font-size: 13px;
-      color: var(--muted);
-      text-align: center;
-    }
-
-    canvas {
-      width: 100%;
-      height: auto;
-      display: block;
-      border-radius: 10px;
-      background: #ffffff;
-    }
-
-    .timer {
-      height: 8px;
-      background: #eef2f7;
-      border-radius: 999px;
-      overflow: hidden;
-    }
-
-    .timer-bar {
-      height: 100%;
-      width: 100%;
-      background: #111827;
-      transition: width 0.1s linear;
-    }
-
-    .answers {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
-      user-select: none;
-      opacity: 1;
-      transition: opacity 0.3s ease;
-    }
-
-    .question-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .circle-timer {
-      width: 54px;
-      height: 54px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      background: conic-gradient(#111827 360deg, #eef2f7 0deg);
-      color: #111827;
-      font-weight: 600;
-    }
-
-    .fade-swap {
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-
-    .phone-diagram {
-      width: 100%;
-      max-width: 260px;
-      align-self: center;
-    }
-
-    .answer-btn {
-      padding: 14px 16px;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      background: #ffffff;
-      text-align: left;
-      font-size: 15px;
-      cursor: pointer;
-      transition: border-color 0.15s ease;
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
-
-    .answer-btn:disabled {
-      cursor: not-allowed;
-      opacity: 0.65;
-    }
-
-    .answer-btn:hover {
-      border-color: var(--accent);
-    }
-
-    .test-layout {
-      width: 100%;
-      display: flex;
-      flex-direction: column;
-      gap: 18px;
-    }
-
-    #inputVideo {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    @media (max-width: 720px) {
-      .app {
-        padding: 18px 12px 32px;
-        gap: 16px;
-      }
-
-      .header {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 8px;
-      }
-
-      .screen {
-        min-height: 360px;
-      }
-
-      .canvas-wrap {
-        padding: 8px;
-        border-radius: 10px;
-      }
-
-      .answers {
-        grid-template-columns: 1fr;
-        gap: 10px;
-      }
-
-      .answer-btn {
-        padding: 12px;
-        font-size: 14px;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="candidate-page">
   <main class="app">
     <header class="header">
       <div class="title">Assessment Session</div>
@@ -329,7 +23,7 @@
         <video id="previewVideo" class="camera-preview" playsinline muted autoplay></video>
         <label for="candidateName">Name</label>
         <input id="candidateName" type="text" placeholder="Your name" autocomplete="name" />
-        <button id="resumeBtn" style="display:none;">Resume your session</button>
+        <button id="resumeBtn" class="is-hidden">Resume your session</button>
         <button id="beginBtn">Begin</button>
       </div>
     </section>
@@ -458,12 +152,13 @@
       const isSmallScreen = window.innerWidth < 768;
       let isMobile = isSmallScreen || matchMedia("(pointer: coarse)").matches;
       const CONFIG = {
-        maxAngle: 18,
-        transition: 8,
-        validZone: 15,
+        maxAngle: 45,
+        transition: 10,
+        validZone: 12,
         maxQuestions: 10,
+        calibDuration: 3000,
+        faceMissingThreshold: 2000,
         cameraFallbackMs: 1000,
-        faceMissingMs: 2000,
         submitRetries: 3,
         submitRetryDelayMs: 500
       };
@@ -503,6 +198,8 @@
       let recoveryMode = false;
       let faceLostStarted = 0;
       let faceLostLogged = false;
+      let faceMissingStarted = 0;
+      let faceMissingQueued = false;
       let gyroAvailable = false;
       let usingGyro = false;
       const rawYawWindow = [];
@@ -534,6 +231,8 @@ uniform sampler2D u_center;
 uniform sampler2D u_left;
 uniform sampler2D u_right;
 uniform float uAngle;
+uniform float uMaxAngle;
+uniform float uTransition;
 uniform float u_time;
 
 float hash(vec2 p) {
@@ -555,8 +254,8 @@ void main() {
   vec4 leftColor   = texture2D(u_left,   decoyUV);
   vec4 rightColor  = texture2D(u_right,  decoyUV);
 
-  // Core blend: real question at 0–8°, transition at 8–18°, decoy-only beyond 18°
-  float blend = smoothstep(8.0, 18.0, absAngle);
+  // Core blend: real question at 0 deg, transition at configured angle, decoy-only beyond max angle
+  float blend = smoothstep(uTransition, uMaxAngle, absAngle);
   vec4 decoy = uAngle < 0.0 ? leftColor : rightColor;
   vec4 mixed = mix(centerColor, decoy, blend);
 
@@ -623,16 +322,18 @@ void main() {
       const rightTex = gl.createTexture();
 
       const uniforms = {
-        u_center: gl.getUniformLocation(program, "u_center"),
-        u_left: gl.getUniformLocation(program, "u_left"),
-        u_right: gl.getUniformLocation(program, "u_right"),
+        uCenter: gl.getUniformLocation(program, "u_center"),
+        uLeft: gl.getUniformLocation(program, "u_left"),
+        uRight: gl.getUniformLocation(program, "u_right"),
         uAngle: gl.getUniformLocation(program, "uAngle"),
+        uMaxAngle: gl.getUniformLocation(program, "uMaxAngle"),
+        uTransition: gl.getUniformLocation(program, "uTransition"),
         u_time: gl.getUniformLocation(program, "u_time")
       };
 
-      gl.uniform1i(uniforms.u_center, 0);
-      gl.uniform1i(uniforms.u_left, 1);
-      gl.uniform1i(uniforms.u_right, 2);
+      gl.uniform1i(uniforms.uCenter, 0);
+      gl.uniform1i(uniforms.uLeft, 1);
+      gl.uniform1i(uniforms.uRight, 2);
 
       const textCanvas = document.createElement("canvas");
       const textCtx = textCanvas.getContext("2d");
@@ -751,6 +452,8 @@ void main() {
         gl.bindTexture(gl.TEXTURE_2D, rightTex);
 
         gl.uniform1f(uniforms.uAngle, angleDeg);
+        gl.uniform1f(uniforms.uMaxAngle, CONFIG.maxAngle);
+        gl.uniform1f(uniforms.uTransition, CONFIG.transition);
         gl.uniform1f(uniforms.u_time, performance.now() / 1000.0);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -850,7 +553,7 @@ void main() {
         }
         if (!calibrated) {
           calibrationSamples.push(filteredYaw);
-          if (performance.now() - calibrationStart >= 3000) {
+          if (performance.now() - calibrationStart >= CONFIG.calibDuration) {
             finishCalibration();
           }
         }
@@ -992,7 +695,7 @@ void main() {
           return;
         }
         const lastSeen = lastTrackingSeen || questionStart;
-        if (lastSeen && performance.now() - lastSeen > CONFIG.faceMissingMs) {
+        if (lastSeen && performance.now() - lastSeen > CONFIG.faceMissingThreshold) {
           recoveryMode = true;
           faceLostStarted = performance.now();
           recoveryMsg.classList.add("active");
@@ -1016,8 +719,17 @@ void main() {
 
         faceMesh.onResults((results) => {
           if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+            if (!faceMissingStarted) {
+              faceMissingStarted = performance.now();
+            }
+            if (!faceMissingQueued && performance.now() - faceMissingStarted >= CONFIG.faceMissingThreshold) {
+              faceMissingQueued = true;
+              queueEvent("face_missing");
+            }
             return;
           }
+          faceMissingStarted = 0;
+          faceMissingQueued = false;
           const lm = results.multiFaceLandmarks[0];
           const leftEye = lm[33];
           const rightEye = lm[263];
@@ -1054,7 +766,7 @@ void main() {
         showScreen("calibrate");
         updateStatus();
         const start = performance.now();
-        const duration = 3000;
+        const duration = CONFIG.calibDuration;
         const tick = () => {
           const elapsed = performance.now() - start;
           const remaining = Math.max(0, duration - elapsed);
@@ -1222,6 +934,7 @@ void main() {
           setTimeout(() => canvas.classList.remove("fade-swap"), 20);
           questionStart = performance.now();
           startTimer(data.timeLimit || 20);
+          preloadNextQuestion();
         } catch (err) {
           queueEvent("question_fetch_failed");
           setTimeout(() => startQuestion(), 1000);
@@ -1477,7 +1190,7 @@ void main() {
         if (res && res.ok) {
           const status = await res.json();
           if (status.status === "in_progress" && !status.expired) {
-            resumeBtn.style.display = "block";
+            resumeBtn.classList.remove("is-hidden");
             return;
           }
         }

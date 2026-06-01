@@ -4,240 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Admin Dashboard</title>
-  <style>
-    :root {
-      --bg: #f8fafc;
-      --panel: #ffffff;
-      --text: #111827;
-      --muted: #6b7280;
-      --border: #e5e7eb;
-      --accent: #0f172a;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 220px 1fr;
-      min-height: 100vh;
-    }
-
-    .sidebar {
-      background: var(--panel);
-      border-right: 1px solid var(--border);
-      padding: 24px 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .brand {
-      font-size: 18px;
-      font-weight: 600;
-    }
-
-    .live-badge {
-      display: inline-flex;
-      min-width: 26px;
-      justify-content: center;
-      padding: 3px 8px;
-      border-radius: 999px;
-      background: #dc2626;
-      color: #ffffff;
-      font-size: 12px;
-    }
-
-    .nav-btn {
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid transparent;
-      background: transparent;
-      text-align: left;
-      cursor: pointer;
-      color: var(--text);
-      font-size: 14px;
-    }
-
-    .nav-btn.active {
-      border-color: var(--border);
-      background: #f3f4f6;
-    }
-
-    .content {
-      padding: 28px 32px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-    }
-
-    .panel h2 {
-      margin: 0 0 16px 0;
-      font-size: 18px;
-    }
-
-    .table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    .table th,
-    .table td {
-      text-align: left;
-      padding: 10px;
-      border-bottom: 1px solid var(--border);
-      font-size: 14px;
-    }
-
-    .table th {
-      color: var(--muted);
-      font-weight: 600;
-    }
-
-    .status-pill {
-      display: inline-flex;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      border: 1px solid var(--border);
-      background: #f9fafb;
-    }
-
-    .integrity {
-      display: inline-flex;
-      min-width: 44px;
-      justify-content: center;
-      padding: 4px 8px;
-      border-radius: 8px;
-      color: #ffffff;
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .integrity.good { background: #16a34a; }
-    .integrity.warn { background: #d97706; }
-    .integrity.bad { background: #dc2626; }
-
-    .quality-low {
-      background: #fee2e2;
-      color: #991b1b;
-      border: 1px solid #fecaca;
-    }
-
-    .check-list {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      max-height: 220px;
-      overflow: auto;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-    }
-
-    .check-list label {
-      color: var(--text);
-      display: grid;
-      grid-template-columns: auto 1fr;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .grid {
-      display: grid;
-      gap: 16px;
-    }
-
-    .grid-2 {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    label {
-      font-size: 12px;
-      color: var(--muted);
-    }
-
-    input, textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      font-size: 14px;
-    }
-
-    textarea {
-      min-height: 100px;
-      resize: vertical;
-    }
-
-    button {
-      padding: 10px 14px;
-      border-radius: 8px;
-      border: none;
-      background: var(--accent);
-      color: #ffffff;
-      font-size: 14px;
-      cursor: pointer;
-    }
-
-    .row {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-    }
-
-    .muted {
-      color: var(--muted);
-      font-size: 12px;
-    }
-
-    .screen {
-      display: none;
-    }
-
-    .screen.active {
-      display: block;
-    }
-
-    .login {
-      max-width: 360px;
-      margin: 80px auto;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    @media (max-width: 900px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-      .sidebar {
-        flex-direction: row;
-        overflow-x: auto;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="admin-page">
   <div id="loginScreen" class="login">
     <h2>Admin Login</h2>
     <label>Username</label>
@@ -248,7 +17,7 @@
     <div id="loginMsg" class="muted"></div>
   </div>
 
-  <div id="dashboard" class="layout" style="display:none;">
+  <div id="dashboard" class="layout is-hidden">
     <aside class="sidebar">
       <div class="brand">Admin <span id="liveBadge" class="live-badge">0</span></div>
       <button class="nav-btn active" data-screen="sessions">Sessions</button>
@@ -262,7 +31,7 @@
       <section id="screen-sessions" class="screen active">
         <div class="panel">
           <h2>Sessions</h2>
-          <div class="row" style="margin-bottom:12px;">
+          <div class="row mb-12">
             <input id="sessionSearch" type="text" placeholder="Candidate name" />
             <input id="sessionStatusFilter" type="text" placeholder="Status" />
             <input id="sessionIntegrityMin" type="number" placeholder="Min integrity" />
@@ -280,12 +49,17 @@
             </thead>
             <tbody></tbody>
           </table>
+          <div class="row pagination">
+            <button id="sessionsPrevBtn">Previous</button>
+            <span id="sessionsPageText" class="muted">Page 1</span>
+            <button id="sessionsNextBtn">Next</button>
+          </div>
         </div>
-        <div class="panel" id="sessionDetail" style="display:none;">
+        <div class="panel is-hidden" id="sessionDetail">
           <h2>Session Detail</h2>
           <div id="detailMeta" class="muted"></div>
-          <div id="detailIntegrity" style="margin-top:10px;"></div>
-          <div class="row" style="margin-top:10px;">
+          <div id="detailIntegrity" class="mt-10"></div>
+          <div class="row mt-10">
             <button id="markCleared">Mark cleared</button>
             <button id="markEscalated">Mark escalated</button>
             <div id="reviewMsg" class="muted"></div>
@@ -353,7 +127,7 @@
           <button id="createSetBtn">Create set</button>
           <div id="setMsg" class="muted"></div>
         </div>
-        <div class="panel" id="invitePanel" style="display:none;">
+        <div class="panel is-hidden" id="invitePanel">
           <h2>Invites</h2>
           <div class="row">
             <input id="inviteName" type="text" placeholder="Candidate name" />
@@ -372,7 +146,7 @@
             <tbody></tbody>
           </table>
           <h3>Timeline</h3>
-          <div id="sessionTimeline" class="row" style="align-items:stretch; flex-wrap:wrap;"></div>
+          <div id="sessionTimeline" class="row timeline-row"></div>
           <h3>Admin Notes</h3>
           <textarea id="noteText"></textarea>
           <button id="saveNoteBtn">Save note</button>
@@ -391,8 +165,8 @@
         <div class="panel">
           <h2>Mobile Access</h2>
           <button id="showMobileAccessBtn">Show QR code</button>
-          <div id="mobileAccessUrl" class="muted" style="margin-top:12px;"></div>
-          <div id="qrCode" style="margin-top:16px;"></div>
+          <div id="mobileAccessUrl" class="muted mt-12"></div>
+          <div id="qrCode" class="mt-16"></div>
         </div>
       </section>
 
@@ -418,7 +192,7 @@
       <section id="screen-questions" class="screen">
         <div class="panel">
           <h2>Questions</h2>
-          <div class="row" style="margin-bottom:12px;">
+          <div class="row mb-12">
             <input id="questionSearch" type="text" placeholder="Search questions" />
             <input id="questionCategoryFilter" type="text" placeholder="Category" />
             <input id="questionDifficultyFilter" type="text" placeholder="Difficulty" />
@@ -435,7 +209,7 @@
             <tbody></tbody>
           </table>
         </div>
-        <div class="panel" id="questionDetail" style="display:none;">
+        <div class="panel is-hidden" id="questionDetail">
           <h2>Question Detail</h2>
           <div id="questionDetailBody" class="muted"></div>
         </div>
@@ -524,6 +298,9 @@
       const sessionSearch = document.getElementById("sessionSearch");
       const sessionStatusFilter = document.getElementById("sessionStatusFilter");
       const sessionIntegrityMin = document.getElementById("sessionIntegrityMin");
+      const sessionsPrevBtn = document.getElementById("sessionsPrevBtn");
+      const sessionsNextBtn = document.getElementById("sessionsNextBtn");
+      const sessionsPageText = document.getElementById("sessionsPageText");
       const liveSessionsTable = document.getElementById("liveSessionsTable").querySelector("tbody");
       const liveBadge = document.getElementById("liveBadge");
       const sessionDetail = document.getElementById("sessionDetail");
@@ -587,11 +364,15 @@
       let allQuestions = [];
       let selectedSetId = "";
       let cachedSessions = [];
+      let sessionsPage = 1;
+      const SESSIONS_PAGE_SIZE = 20;
 
+      // Build authenticated request headers for admin API calls.
       function authHeaders() {
         return { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` };
       }
 
+      // Escape untrusted text before inserting it into HTML.
       function escapeHtml(value) {
         return String(value).replace(/[&<>"']/g, (ch) => ({
           "&": "&amp;",
@@ -602,16 +383,19 @@
         }[ch]));
       }
 
+      // Render the colored integrity score badge.
       function integrityBadge(score) {
         const cls = score >= 80 ? "good" : score >= 50 ? "warn" : "bad";
         return `<span class="integrity ${cls}">${score}</span>`;
       }
 
+      // Render the decoy quality score badge.
       function qualityBadge(score) {
         const cls = score < 7 ? "quality-low" : "status-pill";
         return `<span class="${cls}">Quality ${score}/10</span>`;
       }
 
+      // Switch the active admin screen.
       function showScreen(name) {
         Object.values(screens).forEach((screen) => screen.classList.remove("active"));
         screens[name].classList.add("active");
@@ -624,6 +408,12 @@
         });
       });
 
+      // Show a table loading state with a spinner.
+      function showTableLoading(tbody, columns) {
+        tbody.innerHTML = `<tr class="loading-row"><td colspan="${columns}"><span class="spinner"></span>Loading...</td></tr>`;
+      }
+
+      // Sign in and load the dashboard data.
       async function login() {
         loginMsg.textContent = "";
         const res = await fetch(`${API_BASE}/api/admin/login`, {
@@ -640,18 +430,20 @@
         }
         const data = await res.json();
         adminToken = data.token;
-        loginScreen.style.display = "none";
-        dashboard.style.display = "grid";
+        loginScreen.classList.add("is-hidden");
+        dashboard.classList.remove("is-hidden");
         await refreshAll();
       }
 
+      // Fetch all sessions for the sessions table.
       async function loadSessions() {
-        sessionsTable.innerHTML = "";
+        showTableLoading(sessionsTable, 5);
         const res = await fetch(`${API_BASE}/api/admin/sessions`, { headers: authHeaders() });
         cachedSessions = await res.json();
         renderSessions();
       }
 
+      // Render filtered and paginated sessions.
       function renderSessions() {
         const term = sessionSearch.value.trim().toLowerCase();
         const status = sessionStatusFilter.value.trim().toLowerCase();
@@ -661,8 +453,12 @@
             && (!status || item.status.toLowerCase().includes(status))
             && ((item.integrityScore || 0) >= minIntegrity);
         });
+        const totalPages = Math.max(1, Math.ceil(data.length / SESSIONS_PAGE_SIZE));
+        sessionsPage = Math.min(Math.max(1, sessionsPage), totalPages);
+        const start = (sessionsPage - 1) * SESSIONS_PAGE_SIZE;
+        const pageItems = data.slice(start, start + SESSIONS_PAGE_SIZE);
         sessionsTable.innerHTML = "";
-        data.forEach((item) => {
+        pageItems.forEach((item) => {
           const row = document.createElement("tr");
           row.innerHTML = `
             <td>${escapeHtml(item.name)}</td>
@@ -674,14 +470,21 @@
           row.addEventListener("click", () => loadSessionDetail(item.token, item.name));
           sessionsTable.appendChild(row);
         });
+        if (!pageItems.length) {
+          sessionsTable.innerHTML = `<tr class="loading-row"><td colspan="5">No sessions found.</td></tr>`;
+        }
+        sessionsPageText.textContent = `Page ${sessionsPage} of ${totalPages}`;
+        sessionsPrevBtn.disabled = sessionsPage <= 1;
+        sessionsNextBtn.disabled = sessionsPage >= totalPages;
       }
 
+      // Load answers, events, and review data for a selected session.
       async function loadSessionDetail(token, name) {
         selectedSessionToken = token;
         reviewMsg.textContent = "";
         const res = await fetch(`${API_BASE}/api/admin/session/${token}`, { headers: authHeaders() });
         const data = await res.json();
-        sessionDetail.style.display = "block";
+        sessionDetail.classList.remove("is-hidden");
         detailMeta.textContent = `Candidate: ${name}`;
         detailIntegrity.innerHTML = `Integrity Score: ${integrityBadge(data.integrityScore || 0)}`;
         answersTable.innerHTML = "";
@@ -709,20 +512,21 @@
         sessionTimeline.innerHTML = "";
         data.answers.forEach((ans, index) => {
           const block = document.createElement("div");
-          const color = ans.headCompliance >= 0.8 ? "#dcfce7" : ans.headCompliance >= 0.6 ? "#fef3c7" : "#fee2e2";
-          block.style.cssText = `min-width:80px;padding:8px;border-radius:8px;background:${color};border:1px solid var(--border);`;
+          const cls = ans.headCompliance >= 0.8 ? "timeline-good" : ans.headCompliance >= 0.6 ? "timeline-warn" : "timeline-bad";
+          block.className = `timeline-answer ${cls}`;
           block.textContent = `Q${index + 1}`;
           sessionTimeline.appendChild(block);
         });
         data.events.forEach((evt) => {
           const tick = document.createElement("div");
-          tick.style.cssText = "padding:8px;border-radius:8px;background:#e0e7ff;border:1px solid var(--border);";
+          tick.className = "timeline-event";
           tick.textContent = evt.type;
           sessionTimeline.appendChild(tick);
         });
         notesList.innerHTML = (data.notes || []).map((n) => `<div>${new Date(n.createdAt * 1000).toLocaleString()}: ${escapeHtml(n.note)}</div>`).join("");
       }
 
+      // Refresh the live session counter and table.
       async function loadLiveSessions() {
         if (!adminToken) return;
         const res = await fetch(`${API_BASE}/api/admin/live-sessions`, { headers: authHeaders() });
@@ -737,6 +541,7 @@
         });
       }
 
+      // Load decoy audit rows for the question bank screen.
       async function loadDecoyAudit() {
         if (!adminToken) return;
         const res = await fetch(`${API_BASE}/api/admin/decoy-audit`, { headers: authHeaders() });
@@ -767,8 +572,9 @@
         });
       }
 
+      // Fetch all questions for the admin questions table.
       async function loadQuestions() {
-        questionsTable.innerHTML = "";
+        showTableLoading(questionsTable, 4);
         const res = await fetch(`${API_BASE}/api/admin/questions`, { headers: authHeaders() });
         const data = await res.json();
         allQuestions = data;
@@ -776,6 +582,7 @@
         renderQuestions();
       }
 
+      // Render filtered questions and attach detail handlers.
       function renderQuestions() {
         const term = questionSearch.value.trim().toLowerCase();
         const category = questionCategoryFilter.value.trim().toLowerCase();
@@ -795,7 +602,7 @@
             <td>${escapeHtml(q.question)}</td>
           `;
           row.addEventListener("click", () => {
-            questionDetail.style.display = "block";
+            questionDetail.classList.remove("is-hidden");
             questionDetailBody.innerHTML = `
               <div><strong>Question:</strong> ${escapeHtml(q.question)}</div>
               <div><strong>Options:</strong> ${escapeHtml(q.options.join(" | "))}</div>
@@ -804,7 +611,7 @@
               <div><strong>Decoy Left Options:</strong> ${escapeHtml(q.decoyLeft.options.join(" | "))}</div>
               <div><strong>Decoy Right:</strong> ${escapeHtml(q.decoyRight.question)} ${qualityBadge(q.decoyRight.quality || 8)}</div>
               <div><strong>Decoy Right Options:</strong> ${escapeHtml(q.decoyRight.options.join(" | "))}</div>
-              <button data-regenerate="${q.id}" style="margin-top:10px;">Regenerate decoys</button>
+              <button data-regenerate="${q.id}" class="mt-10">Regenerate decoys</button>
             `;
             questionDetailBody.querySelector("button").addEventListener("click", () => regenerateDecoys(q.id));
           });
@@ -812,6 +619,7 @@
         });
       }
 
+      // Regenerate decoys for one question.
       async function regenerateDecoys(questionId) {
         await fetch(`${API_BASE}/api/admin/question/regenerate-decoys`, {
           method: "POST",
@@ -821,6 +629,7 @@
         await loadQuestions();
       }
 
+      // Save a manually entered question.
       async function saveQuestion() {
         const options = qOptions.value.split("\n").map((line) => line.trim()).filter(Boolean);
         if (options.length !== 4) {
@@ -849,6 +658,7 @@
         await loadQuestions();
       }
 
+      // Load persisted test and review settings.
       async function loadSettings() {
         const res = await fetch(`${API_BASE}/api/admin/settings`, { headers: authHeaders() });
         const data = await res.json();
@@ -858,6 +668,7 @@
         setEvents.value = data.autoFlagEvents.join(", ");
       }
 
+      // Save updated test and review settings.
       async function saveSettingsClick() {
         const payload = {
           timeLimit: parseInt(setTime.value, 10),
@@ -872,6 +683,7 @@
         });
       }
 
+      // Change the admin password.
       async function updatePassword() {
         pwMsg.textContent = "";
         const res = await fetch(`${API_BASE}/api/admin/password`, {
@@ -891,6 +703,7 @@
         pwNew.value = "";
       }
 
+      // Refresh all dashboard data after login.
       async function refreshAll() {
         await loadSessions();
         await loadLiveSessions();
@@ -900,6 +713,7 @@
         await loadSettings();
       }
 
+      // Render question checkboxes for test-set creation.
       function renderSetQuestionList() {
         setQuestionList.innerHTML = "";
         allQuestions.forEach((q) => {
@@ -909,6 +723,7 @@
         });
       }
 
+      // Create a named test set from selected questions.
       async function createTestSet() {
         const questionIds = Array.from(setQuestionList.querySelectorAll("input:checked")).map((input) => parseInt(input.value, 10));
         const res = await fetch(`${API_BASE}/api/admin/test-set`, {
@@ -933,6 +748,7 @@
         }
       }
 
+      // Load test sets and invite metadata.
       async function loadTestSets() {
         testSetsTable.innerHTML = "";
         const res = await fetch(`${API_BASE}/api/admin/test-sets`, { headers: authHeaders() });
@@ -951,12 +767,14 @@
         });
       }
 
+      // Show invite controls for a selected test set.
       function showInvites(set) {
         selectedSetId = set.id;
-        invitePanel.style.display = "block";
+        invitePanel.classList.remove("is-hidden");
         renderInvites(set.invites || []);
       }
 
+      // Render invite rows for a selected set.
       function renderInvites(invites) {
         invitesTable.innerHTML = "";
         invites.forEach((invite) => {
@@ -972,6 +790,7 @@
         });
       }
 
+      // Create a candidate invite link.
       async function createInvite() {
         const res = await fetch(`${API_BASE}/api/admin/invite`, {
           method: "POST",
@@ -983,6 +802,7 @@
         await loadTestSets();
       }
 
+      // Save the manual review status for a session.
       async function setReviewStatus(status) {
         if (!selectedSessionToken) {
           return;
@@ -1000,6 +820,7 @@
         await loadSessions();
       }
 
+      // Save an admin note on the selected session.
       async function saveNote() {
         if (!selectedSessionToken || !noteText.value.trim()) return;
         await fetch(`${API_BASE}/api/admin/session/note`, {
@@ -1011,6 +832,7 @@
         await loadSessionDetail(selectedSessionToken, detailMeta.textContent.replace("Candidate: ", ""));
       }
 
+      // Download completed sessions as CSV.
       async function exportSessions() {
         const res = await fetch(`${API_BASE}/api/admin/sessions/export`, { headers: authHeaders() });
         if (!res.ok) {
@@ -1025,6 +847,7 @@
         URL.revokeObjectURL(url);
       }
 
+      // Show a local-network test URL and QR code.
       async function showMobileAccess() {
         const res = await fetch(`${API_BASE}/api/local-access`);
         const data = await res.json();
@@ -1036,9 +859,26 @@
       }
 
       loginBtn.addEventListener("click", login);
-      sessionSearch.addEventListener("input", renderSessions);
-      sessionStatusFilter.addEventListener("input", renderSessions);
-      sessionIntegrityMin.addEventListener("input", renderSessions);
+      sessionSearch.addEventListener("input", () => {
+        sessionsPage = 1;
+        renderSessions();
+      });
+      sessionStatusFilter.addEventListener("input", () => {
+        sessionsPage = 1;
+        renderSessions();
+      });
+      sessionIntegrityMin.addEventListener("input", () => {
+        sessionsPage = 1;
+        renderSessions();
+      });
+      sessionsPrevBtn.addEventListener("click", () => {
+        sessionsPage -= 1;
+        renderSessions();
+      });
+      sessionsNextBtn.addEventListener("click", () => {
+        sessionsPage += 1;
+        renderSessions();
+      });
       saveNoteBtn.addEventListener("click", saveNote);
       questionSearch.addEventListener("input", renderQuestions);
       questionCategoryFilter.addEventListener("input", renderQuestions);
@@ -1051,7 +891,11 @@
       saveSettings.addEventListener("click", saveSettingsClick);
       pwSave.addEventListener("click", updatePassword);
       markCleared.addEventListener("click", () => setReviewStatus("cleared"));
-      markEscalated.addEventListener("click", () => setReviewStatus("escalated"));
+      markEscalated.addEventListener("click", () => {
+        if (window.confirm("Are you sure you want to mark this session escalated?")) {
+          setReviewStatus("escalated");
+        }
+      });
       setInterval(loadLiveSessions, 10000);
     })();
   </script>

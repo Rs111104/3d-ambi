@@ -1,65 +1,71 @@
-# 3D Ambi Anti-Cheat Test
+# 3d-ambi
 
-WebGL angle-dependent text rendering with MediaPipe face tracking for proctored assessment sessions.
+Anti-cheat online test system that uses face tracking and angle-dependent WebGL rendering to show real questions only to the candidate sitting straight.
 
-## Features
+## How It Works
 
-- Real questions render only near the calibrated straight-ahead viewing angle.
-- Left and right decoy questions render when the candidate moves outside the valid zone.
-- Candidate name and timestamp watermark are drawn into the canvas texture.
-- MediaPipe FaceMesh estimates yaw from the webcam.
-- Mobile sessions can use device orientation when available.
-- Missing face detection is logged after 2 seconds.
-- Answer buttons disable immediately after first click.
-- Answer submissions retry up to 3 times with a 500 ms delay before local queueing.
-- The next question preloads while the candidate answers the current one.
-- Camera-unavailable sessions fall back to straight-ahead rendering after 1 second.
+The candidate's webcam estimates whether they are facing the screen directly. When they sit straight, the canvas shows the real question. When someone views from the side, the canvas blends into a decoy question. The page also records review signals such as tab switches, missing face detection, right-click attempts, screen-capture attempts, and suspicious stillness. Webcam analysis runs in the browser and video is not uploaded.
 
-## Run Locally
+## Folder Structure
+
+```text
+3d-ambi/
+├── frontend/
+│   ├── index.html
+│   ├── admin.html
+│   └── styles.css
+├── backend/
+│   ├── server.py
+│   └── requirements.txt
+├── .gitignore
+└── README.md
+```
+
+## Setup
 
 ```bash
-cd backend
+git clone <your-repo-url>
+cd 3d-ambi/backend
+pip install -r requirements.txt
 python server.py
 ```
 
-Open:
+Candidate page:
 
 ```text
 http://127.0.0.1:8080/test
 ```
 
-Admin:
+Admin page:
 
 ```text
 http://127.0.0.1:8080/admin
 ```
 
-Default admin credentials are configured through `.env`:
+## Environment Variables
 
-```text
-ADMIN_USER=admin
-ADMIN_PASSWORD=admin123!
-```
+| Variable | Required | Description |
+|---|---:|---|
+| `LLM_API_KEY` | No | API key used for generated decoy questions when enabled. |
+| `ADMIN_USER` | Yes | Admin dashboard username. |
+| `ADMIN_PASSWORD` | Yes | Admin dashboard password. |
+| `PORT` | No | Server port. Defaults to `8080`. |
 
-## Configuration
+Warning: set `ADMIN_USER` and `ADMIN_PASSWORD` before going live.
 
-Client constants are grouped in `CONFIG` at the top of the session script:
+## Deployment On Render
 
-- `maxAngle`
-- `transition`
-- `validZone`
-- `maxQuestions`
-- `cameraFallbackMs`
-- `faceMissingMs`
-- `submitRetries`
-- `submitRetryDelayMs`
+1. Create a free account on Render.
+2. Click New Web Service.
+3. Connect your GitHub account and pick this repository.
+4. Set the start command to `python backend/server.py`.
+5. Set the region closest to your candidates.
+6. Add a service name and click Create Web Service.
+7. When the service is live, open the public Render URL and confirm the candidate page loads.
+8. Open the same URL with `/admin` at the end to reach the admin page.
+9. Add `LLM_API_KEY` if you want generated decoys.
+10. Set `ADMIN_USER` and `ADMIN_PASSWORD` before sharing the admin page.
 
-Server settings are available in the admin UI and persisted in SQLite.
+## Security Notes
 
-## Backend Change List
-
-- `/api/session/next` now returns plain JSON over HTTPS-compatible transport instead of an encrypted `payload` wrapper.
-- Removed the server response call to `encrypt_payload`.
-- Removed the unused `encrypt_payload` helper.
-- Removed the unused `base64` import.
-- Existing session, answer, event, result, invite, and admin endpoints remain unchanged.
+Question text is delivered as plain JSON over HTTPS and rendered into a canvas rather than normal page text. The system blocks embedding, rate-limits session endpoints, records suspicious behavior, and keeps webcam analysis on the candidate device. No video is uploaded. Review signals are stored as events so administrators can audit sessions after completion.

@@ -659,18 +659,18 @@ def record_answer(token, question_id, answer_index, time_ms, head_compliance):
         conn = db_connect()
         try:
             session_row = conn.execute(
-                "SELECT issued_at_ms, delivered_question_id FROM sessions WHERE token = ?",
+                "SELECT issued_at_ms FROM sessions WHERE token = ?",
                 (token,)
             ).fetchone()
             if not session_row or not session_row["issued_at_ms"]:
                 return False, "question_not_served"
-            if int(session_row["delivered_question_id"]) != int(question_id):
-                return False, "question_out_of_sequence"
             log_row = conn.execute(
                 "SELECT served_at FROM question_log WHERE token = ? AND question_id = ? ORDER BY id DESC LIMIT 1",
                 (token, question_id)
             ).fetchone()
-            served_at = float(log_row["served_at"]) if log_row else int(session_row["issued_at_ms"]) / 1000.0
+            if not log_row:
+                return False, "question_out_of_sequence"
+            served_at = float(log_row["served_at"])
             elapsed_sec = time.time() - served_at
             time_limit_sec = int(get_setting("time_limit", "20"))
             server_time_ms = max(0, int(elapsed_sec * 1000))
@@ -1164,7 +1164,7 @@ def send_text(handler, status, body, content_type="text/html; charset=utf-8"):
 
 
 def serve_file(handler, rel_path, content_type="text/html; charset=utf-8"):
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
     full_path = os.path.join(base_dir, rel_path)
     if not os.path.isfile(full_path):
         json_response(handler, 404, {"error": "not_found"})
@@ -1360,10 +1360,6 @@ class Handler(BaseHTTPRequestHandler):
             session_row = get_or_create_session(token)
             if not session_row:
                 json_response(self, 400, {"error": "invalid_session"})
-                return
-            timeout_ms = get_session_time_limit(session_row["token"]) * 1000
-            if int(session_row["answer_received"]) == 0 and session_row["issued_at_ms"]:
-                json_response(self, 403, {"error": "answer_required"})
                 return
             token = session_row["token"]
             row = fetch_question_for_session(session_row)
@@ -1660,6 +1656,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/admin" or path == "/admin.html":
             serve_file(self, "admin.html")
+            return
+        if path == "/styles.css":
+            serve_file(self, "styles.css", "text/css; charset=utf-8")
             return
         if path == "/health":
             try:
