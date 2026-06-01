@@ -141,6 +141,15 @@
       user-select: none;
     }
 
+    .camera-preview {
+      width: 160px;
+      height: 120px;
+      border-radius: 8px;
+      background: #f3f4f6;
+      object-fit: cover;
+      border: 1px solid var(--border);
+    }
+
     .recovery-msg {
       display: none;
       text-align: center;
@@ -199,6 +208,8 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 12px;
       user-select: none;
+      opacity: 1;
+      transition: opacity 0.3s ease;
     }
 
     .question-meta {
@@ -280,7 +291,8 @@
     <section id="screen-start" class="screen active">
       <div class="card">
         <h1>3D Ambigram Assessment</h1>
-        <p>This assessment uses your camera or phone motion to keep exam questions visible only from your direct viewing angle.</p>
+        <p>This proctored assessment uses webcam monitoring to protect test integrity and keep questions visible only from your direct viewing angle.</p>
+        <video id="previewVideo" class="camera-preview" playsinline muted autoplay></video>
         <label for="candidateName">Name</label>
         <input id="candidateName" type="text" placeholder="Your name" autocomplete="name" />
         <button id="resumeBtn" style="display:none;">Resume your session</button>
@@ -367,6 +379,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script>
     (() => {
+      try {
       const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
       const screens = {
         start: document.getElementById("screen-start"),
@@ -404,6 +417,7 @@
       const canvas = document.getElementById("glCanvas");
       const canvasWrap = document.querySelector(".canvas-wrap");
       const inputVideo = document.getElementById("inputVideo");
+      const previewVideo = document.getElementById("previewVideo");
       const params = new URLSearchParams(location.search);
       const setId = params.get("set") || "";
       const inviteToken = params.get("invite") || "";
@@ -420,7 +434,11 @@
       let sessionToken = "";
       let sessionKey = null;
       let currentQuestionId = null;
-      let currentOptions = [];
+      let realOptions = [];
+      let decoyLeftOptions = [];
+      let decoyRightOptions = [];
+      let visibleOptionMode = "real";
+      let visibleOptions = [];
       let questionStart = 0;
       let timerId = null;
       let questionNumber = 0;
@@ -434,7 +452,7 @@
       let calibrationSamples = [];
       let baseline = 0;
       let angleDeg = 0;
-      const maxAngle = 45;
+      const maxAngle = 18;
       const transition = 8;
       const validZone = 15;
       let yawSamples = [];
@@ -444,6 +462,8 @@
       let faceLostLogged = false;
       let gyroAvailable = false;
       let usingGyro = false;
+      const rawYawWindow = [];
+      let stillnessStarted = 0;
       let livenessStage = "idle";
       let livenessStart = 0;
       let livenessMinYaw = 0;
@@ -464,41 +484,52 @@
         "  gl_Position = vec4(a_position, 0.0, 1.0);\n" +
         "}\n";
 
-      const fragmentSource = "\n" +
-        "precision mediump float;\n" +
-        "varying vec2 v_uv;\n" +
-        "uniform sampler2D u_center;\n" +
-        "uniform sampler2D u_left;\n" +
-        "uniform sampler2D u_right;\n" +
-        "uniform float u_angle;\n" +
-        "uniform float u_maxAngle;\n" +
-        "uniform float u_transition;\n" +
-        "uniform float u_time;\n" +
-        "uniform vec2 u_resolution;\n" +
-        "float rand(vec2 co) {\n" +
-        "  return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);\n" +
-        "}\n" +
-        "void main() {\n" +
-        "  float absAngle = abs(u_angle);\n" +
-        "  float realVisibility = 1.0 - smoothstep(8.0, 18.0, absAngle);\n" +
-        "  float decoyVisibility = 1.0 - realVisibility;\n" +
-        "  float jitterSeed = floor(u_time * 24.0);\n" +
-        "  float jitterX = (rand(vec2(jitterSeed, floor(v_uv.y * 360.0))) * 2.0 - 1.0) * 0.003;\n" +
-        "  float jitterY = (rand(vec2(floor(v_uv.x * 360.0), jitterSeed + 17.0)) * 2.0 - 1.0) * 0.003;\n" +
-        "  vec2 jitter = vec2(jitterX, jitterY);\n" +
-        "  float parallax = decoyVisibility * (u_angle / 90.0) * 0.07;\n" +
-        "  vec4 centerColor = texture2D(u_center, v_uv);\n" +
-        "  vec4 leftColor = texture2D(u_left, v_uv + jitter + vec2(-parallax, 0.0));\n" +
-        "  vec4 rightColor = texture2D(u_right, v_uv - jitter + vec2(-parallax, 0.0));\n" +
-        "  vec4 decoyColor = u_angle < 0.0 ? leftColor : rightColor;\n" +
-        "  vec4 mixedColor = centerColor * realVisibility + decoyColor * decoyVisibility;\n" +
-        "  float grain = rand(v_uv * u_resolution + vec2(u_time * 43.0, u_angle));\n" +
-        "  vec3 noiseLayer = mixedColor.rgb + vec3(grain * 0.4 + 0.3 - 0.5);\n" +
-        "  float noiseBlend = smoothstep(35.0, 45.0, absAngle);\n" +
-        "  float polarization = pow(max(cos(radians(clamp(absAngle, 0.0, 89.0))), 0.0), 3.0);\n" +
-        "  vec3 finalColor = mix(mixedColor.rgb, clamp(noiseLayer, 0.0, 1.0), noiseBlend) * (0.35 + 0.65 * polarization);\n" +
-        "  gl_FragColor = vec4(finalColor, 1.0);\n" +
-        "}\n";
+      const fragmentSource = `
+precision mediump float;
+varying vec2 v_uv;
+uniform sampler2D u_center;
+uniform sampler2D u_left;
+uniform sampler2D u_right;
+uniform float u_angle;
+uniform float u_time;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+}
+
+void main() {
+  float absAngle = abs(u_angle);
+
+  // UV jitter: adds per-frame micro-offset to decoy layers to defeat frame-averaging attacks
+  float jitter = (hash(v_uv + u_time * 0.017) - 0.5) * 0.006;
+  vec2 jitteredUV = v_uv + vec2(jitter, 0.0);
+
+  // Parallax drift: decoy shifts horizontally as angle increases, creating depth illusion
+  float parallax = (u_angle / 90.0) * 0.07;
+  vec2 decoyUV = clamp(jitteredUV + vec2(parallax, 0.0), 0.0, 1.0);
+
+  vec4 centerColor = texture2D(u_center, v_uv);
+  vec4 leftColor   = texture2D(u_left,   decoyUV);
+  vec4 rightColor  = texture2D(u_right,  decoyUV);
+
+  // Core blend: real question at 0–8°, transition at 8–18°, decoy-only beyond 18°
+  float blend = smoothstep(8.0, 18.0, absAngle);
+  vec4 decoy = u_angle < 0.0 ? leftColor : rightColor;
+  vec4 mixed = mix(centerColor, decoy, blend);
+
+  // Noise layer beyond 35 deg: corrupt the image further to defeat extreme-angle photography
+  float noiseWeight = smoothstep(35.0, 45.0, absAngle);
+  float noise = hash(v_uv * 200.0 + u_time * 0.1) * 0.35 + 0.65;
+  vec4 noisy = vec4(decoy.rgb * noise, 1.0);
+
+  // Polarisation falloff: brightness reduces at steep angles, mimicking physical screen behaviour
+  float polarFade = pow(cos(absAngle * 0.01745329), 3.0);
+  vec4 finalColor = mix(mixed, noisy, noiseWeight);
+  finalColor.rgb *= mix(1.0, polarFade, smoothstep(18.0, 45.0, absAngle));
+
+  gl_FragColor = vec4(finalColor.rgb, 1.0);
+}
+`;
 
       function createShader(type, source) {
         const shader = gl.createShader(type);
@@ -546,18 +577,17 @@
       const leftTex = gl.createTexture();
       const rightTex = gl.createTexture();
 
-      const uCenter = gl.getUniformLocation(program, "u_center");
-      const uLeft = gl.getUniformLocation(program, "u_left");
-      const uRight = gl.getUniformLocation(program, "u_right");
-      const uAngle = gl.getUniformLocation(program, "u_angle");
-      const uMaxAngle = gl.getUniformLocation(program, "u_maxAngle");
-      const uTransition = gl.getUniformLocation(program, "u_transition");
-      const uTime = gl.getUniformLocation(program, "u_time");
-      const uResolution = gl.getUniformLocation(program, "u_resolution");
+      const uniforms = {
+        u_center: gl.getUniformLocation(program, "u_center"),
+        u_left: gl.getUniformLocation(program, "u_left"),
+        u_right: gl.getUniformLocation(program, "u_right"),
+        u_angle: gl.getUniformLocation(program, "u_angle"),
+        u_time: gl.getUniformLocation(program, "u_time")
+      };
 
-      gl.uniform1i(uCenter, 0);
-      gl.uniform1i(uLeft, 1);
-      gl.uniform1i(uRight, 2);
+      gl.uniform1i(uniforms.u_center, 0);
+      gl.uniform1i(uniforms.u_left, 1);
+      gl.uniform1i(uniforms.u_right, 2);
 
       const textCanvas = document.createElement("canvas");
       const textCtx = textCanvas.getContext("2d");
@@ -581,25 +611,53 @@
         return lines;
       }
 
-      function drawText(text) {
+      function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
+        const words = text.split(/\s+/).filter(Boolean);
+        let line = "";
+        for (const word of words) {
+          const test = line ? `${line} ${word}` : word;
+          if (ctx.measureText(test).width > maxWidth && line) {
+            ctx.fillText(line, x, y);
+            line = word;
+            y += lineHeight;
+          } else {
+            line = test;
+          }
+        }
+        if (line) {
+          ctx.fillText(line, x, y);
+          y += lineHeight;
+        }
+        return y;
+      }
+
+      function drawText(questionText, options, questionLabel) {
         textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
         textCtx.fillStyle = "#ffffff";
         textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height);
+        textCtx.textAlign = "left";
+        textCtx.textBaseline = "top";
+        textCtx.fillStyle = "#6b7280";
+        textCtx.font = "500 28px Arial";
+        textCtx.fillText(questionLabel || `Question ${questionNumber + 1}`, 32, 30);
         textCtx.fillStyle = "#111827";
-        textCtx.font = "600 40px Arial";
-        textCtx.textAlign = "center";
-        textCtx.textBaseline = "middle";
-        const lines = wrapText(text, 34);
-        const lineHeight = 52;
-        const totalHeight = lines.length * lineHeight;
-        const startY = (textCanvas.height - totalHeight) / 2 + lineHeight / 2;
-        for (let i = 0; i < lines.length; i += 1) {
-          textCtx.fillText(lines[i], textCanvas.width / 2, startY + i * lineHeight);
+        textCtx.font = "400 42px Arial";
+        let y = wrapCanvasText(textCtx, questionText, 32, 86, textCanvas.width * 0.85, 54) + 18;
+        const labels = ["A", "B", "C", "D"];
+        textCtx.font = "400 26px Arial";
+        for (let i = 0; i < Math.min(4, (options || []).length); i += 1) {
+          const boxY = y + i * 58;
+          textCtx.fillStyle = "#f3f4f6";
+          textCtx.beginPath();
+          textCtx.roundRect(32, boxY, textCanvas.width - 64, 44, 10);
+          textCtx.fill();
+          textCtx.fillStyle = "#111827";
+          textCtx.fillText(`${labels[i]}. ${options[i]}`, 50, boxY + 8);
         }
       }
 
-      function uploadTexture(texture, text) {
-        drawText(text);
+      function uploadTexture(texture, questionText, options, questionLabel) {
+        drawText(questionText, options, questionLabel);
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textCanvas);
@@ -632,11 +690,8 @@
         gl.activeTexture(gl.TEXTURE2);
         gl.bindTexture(gl.TEXTURE_2D, rightTex);
 
-        gl.uniform1f(u_angle, angleDeg);
-        gl.uniform1f(u_maxAngle, maxAngle);
-        gl.uniform1f(u_transition, transition);
-        gl.uniform1f(u_time, performance.now() / 1000);
-        gl.uniform2f(u_resolution, canvas.width, canvas.height);
+        gl.uniform1f(uniforms.u_angle, angleDeg);
+        gl.uniform1f(uniforms.u_time, performance.now() / 1000.0);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
@@ -684,6 +739,33 @@
 
       function onYaw(rawYaw) {
         lastTrackingSeen = performance.now();
+        rawYawWindow.push({ t: performance.now(), yaw: rawYaw });
+        while (rawYawWindow.length > 30) {
+          rawYawWindow.shift();
+        }
+        if (rawYawWindow.length >= 20 && currentQuestionId) {
+          const mean = rawYawWindow.reduce((sum, item) => sum + item.yaw, 0) / rawYawWindow.length;
+          const variance = rawYawWindow.reduce((sum, item) => {
+            const d = item.yaw - mean;
+            return sum + d * d;
+          }, 0) / rawYawWindow.length;
+          const stdDev = Math.sqrt(variance);
+          if (stdDev < 0.15) {
+            if (!stillnessStarted) stillnessStarted = performance.now();
+            if (performance.now() - stillnessStarted > 2000 && !livenessFailActive) {
+              livenessFailActive = true;
+              livenessMsg.textContent = "Please move naturally to continue";
+              livenessMsg.classList.add("active");
+              queueEvent("liveness_fail", JSON.stringify({ durationSec: 2, stdDev }));
+            }
+          } else {
+            stillnessStarted = 0;
+            if (livenessFailActive) {
+              livenessFailActive = false;
+              livenessMsg.classList.remove("active");
+            }
+          }
+        }
         if (recoveryMode) {
           recoveryMode = false;
           if (faceLostStarted) {
@@ -694,11 +776,11 @@
           recoveryMsg.classList.remove("active");
         }
         yawSamples.push(rawYaw);
-        if (yawSamples.length > 5) {
+        if (yawSamples.length > 7) {
           yawSamples.shift();
         }
         const sorted = yawSamples.slice().sort((a, b) => a - b);
-        const filteredYaw = sorted[Math.floor(sorted.length / 2)];
+        const filteredYaw = sorted.length >= 7 ? sorted[3] : sorted[Math.floor(sorted.length / 2)];
         if (livenessStage === "running") {
           updateLivenessGesture(filteredYaw);
         }
@@ -717,36 +799,6 @@
         calibAngle.textContent = `Angle: ${angleDeg.toFixed(1)} deg`;
         livenessAngle.textContent = `Angle: ${filteredYaw.toFixed(1)} deg`;
         render();
-      }
-
-      function trackLandmarkVariance(lm) {
-        const sample = [33, 263, 234, 454, 1, 152].map((idx) => {
-          const p = lm[idx];
-          return [p.x, p.y, p.z || 0];
-        }).flat();
-        landmarkWindow.push({ t: performance.now(), sample });
-        while (landmarkWindow.length && performance.now() - landmarkWindow[0].t > 2000) {
-          landmarkWindow.shift();
-        }
-        if (landmarkWindow.length < 12 || !currentQuestionId) {
-          return;
-        }
-        let variance = 0;
-        for (let i = 0; i < sample.length; i += 1) {
-          const mean = landmarkWindow.reduce((sum, item) => sum + item.sample[i], 0) / landmarkWindow.length;
-          variance += landmarkWindow.reduce((sum, item) => {
-            const d = item.sample[i] - mean;
-            return sum + d * d;
-          }, 0) / landmarkWindow.length;
-        }
-        if (variance < 0.000002 && !livenessFailActive) {
-          livenessFailActive = true;
-          livenessMsg.classList.add("active");
-          queueEvent("liveness_fail", JSON.stringify({ variance }));
-        } else if (variance >= 0.000002 && livenessFailActive) {
-          livenessFailActive = false;
-          livenessMsg.classList.remove("active");
-        }
       }
 
       function startLivenessGesture() {
@@ -795,7 +847,9 @@
           }
           const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
           inputVideo.srcObject = stream;
+          previewVideo.srcObject = stream;
           await inputVideo.play();
+          await previewVideo.play().catch(() => {});
           setupFaceMesh();
         } catch (err) {
           trackingAvailable = false;
@@ -816,8 +870,8 @@
         gyroAvailable = true;
         trackingAvailable = true;
         window.addEventListener("deviceorientation", (event) => {
-          const beta = typeof event.beta === "number" ? event.beta : 0;
-          const yaw = Math.max(-maxAngle, Math.min(maxAngle, beta - 90));
+          const gamma = typeof event.gamma === "number" ? event.gamma : 0;
+          const yaw = Math.max(-45, Math.min(45, gamma));
           onYaw(yaw);
         });
         return true;
@@ -878,34 +932,24 @@
             return;
           }
           const lm = results.multiFaceLandmarks[0];
-          trackLandmarkVariance(lm);
           const leftEye = lm[33];
           const rightEye = lm[263];
           const leftTragion = lm[234];
           const rightTragion = lm[454];
           const noseTip = lm[1];
-          const chin = lm[152];
-          const pairYaw = (left, right, center, scale) => {
-            const midX = (left.x + right.x) / 2;
-            const dist = Math.max(0.0001, right.x - left.x);
-            return ((center.x - midX) / dist) * scale;
-          };
-          const eyeNose = pairYaw(leftEye, rightEye, noseTip, 60);
-          const earNose = pairYaw(leftTragion, rightTragion, noseTip, 50);
-          const eyeChin = pairYaw(leftEye, rightEye, chin, 42);
-          const earChin = pairYaw(leftTragion, rightTragion, chin, 36);
-          const eyeBalance = (((noseTip.x - leftEye.x) - (rightEye.x - noseTip.x)) / Math.max(0.0001, rightEye.x - leftEye.x)) * 38;
-          const earBalance = (((noseTip.x - leftTragion.x) - (rightTragion.x - noseTip.x)) / Math.max(0.0001, rightTragion.x - leftTragion.x)) * 32;
-          const yawDeg = Math.max(-maxAngle, Math.min(maxAngle, (eyeNose + earNose + eyeChin + earChin + eyeBalance + earBalance) / 6));
+          const yawA = (noseTip.x - (leftEye.x + rightEye.x) / 2) / Math.max(0.001, rightEye.x - leftEye.x) * 55;
+          const yawB = (noseTip.x - (leftTragion.x + rightTragion.x) / 2) / Math.max(0.001, rightTragion.x - leftTragion.x) * 70;
+          const yawC = (leftEye.x - rightEye.x + (leftTragion.x - rightTragion.x) * 0.5) * -40;
+          const yawDeg = Math.max(-45, Math.min(45, yawA * 0.40 + yawB * 0.40 + yawC * 0.20));
           onYaw(yawDeg);
         });
 
         const camera = new Camera(inputVideo, {
           onFrame: async () => {
-            if (setupFaceMesh.lastFrame && performance.now() - setupFaceMesh.lastFrame < 66) {
+            setupFaceMesh.frameCount = (setupFaceMesh.frameCount || 0) + 1;
+            if (setupFaceMesh.frameCount % 2 !== 0) {
               return;
             }
-            setupFaceMesh.lastFrame = performance.now();
             await faceMesh.send({ image: inputVideo });
           },
           width: 640,
@@ -945,7 +989,18 @@
           return;
         }
         const sum = calibrationSamples.reduce((a, b) => a + b, 0);
-        baseline = calibrationSamples.length ? sum / calibrationSamples.length : 0;
+        const mean = calibrationSamples.length ? sum / calibrationSamples.length : 0;
+        const variance = calibrationSamples.length ? calibrationSamples.reduce((acc, value) => {
+          const d = value - mean;
+          return acc + d * d;
+        }, 0) / calibrationSamples.length : 0;
+        if (Math.sqrt(variance) > 3.0) {
+          calibTimer.textContent = "3";
+          statusText.textContent = "Please hold still and look straight ahead";
+          setTimeout(startCalibration, 800);
+          return;
+        }
+        baseline = mean;
         calibrated = true;
         calibrationSamples = [];
         showScreen("test");
@@ -1057,21 +1112,41 @@
       }
 
       function setQuestionTextures(data) {
-        uploadTexture(centerTex, data.question);
-        uploadTexture(leftTex, data.decoyLeft.question);
-        uploadTexture(rightTex, data.decoyRight.question);
+        uploadTexture(centerTex, data.question, data.options, `Question ${questionNumber + 1}`);
+        uploadTexture(leftTex, data.decoyLeft.question, data.decoyLeft.options, `Question ${questionNumber + 1}`);
+        uploadTexture(rightTex, data.decoyRight.question, data.decoyRight.options, `Question ${questionNumber + 1}`);
         render();
       }
 
       function setAnswerButtons(options) {
-        answerButtons.innerHTML = "";
-        options.forEach((option, index) => {
-          const btn = document.createElement("button");
-          btn.className = "answer-btn";
-          btn.textContent = option;
-          btn.addEventListener("click", () => submitAnswer(index));
-          answerButtons.appendChild(btn);
-        });
+        answerButtons.style.opacity = "0";
+        setTimeout(() => {
+          answerButtons.innerHTML = "";
+          visibleOptions = options.slice();
+          options.forEach((option, index) => {
+            const btn = document.createElement("button");
+            btn.className = "answer-btn";
+            btn.textContent = option;
+            btn.addEventListener("click", () => submitAnswer(visibleOptionMode === "real" ? index : -1));
+            answerButtons.appendChild(btn);
+          });
+          answerButtons.style.opacity = "1";
+        }, 150);
+      }
+
+      function syncAnswerOptionsToAngle() {
+        if (!currentQuestionId) return;
+        const absAngle = Math.abs(angleDeg);
+        const targetMode = absAngle > 15 ? (angleDeg < 0 ? "left" : "right") : (absAngle < 10 ? "real" : visibleOptionMode);
+        if (targetMode === visibleOptionMode) return;
+        visibleOptionMode = targetMode;
+        if (targetMode === "left") {
+          setAnswerButtons(decoyLeftOptions);
+        } else if (targetMode === "right") {
+          setAnswerButtons(decoyRightOptions);
+        } else {
+          setAnswerButtons(realOptions);
+        }
       }
 
       function startTimer(seconds) {
@@ -1104,10 +1179,13 @@
           const data = await fetchNextQuestion();
           progressText.textContent = `Question ${questionNumber + 1} of ${data.totalQuestions || maxQuestions}`;
           currentQuestionId = data.questionId;
-          currentOptions = data.options;
+          realOptions = data.options;
+          decoyLeftOptions = data.decoyLeft.options || data.options;
+          decoyRightOptions = data.decoyRight.options || data.options;
+          visibleOptionMode = "real";
           maxQuestions = data.totalQuestions || maxQuestions;
           setQuestionTextures(data);
-          setAnswerButtons(currentOptions);
+          setAnswerButtons(realOptions);
           canvas.classList.add("fade-swap");
           setTimeout(() => canvas.classList.remove("fade-swap"), 20);
           questionStart = performance.now();
@@ -1175,7 +1253,7 @@
 
       function saveSessionState() {
         if (!sessionToken) return;
-        localStorage.setItem("ambiSession", JSON.stringify({
+        localStorage.setItem("ambi_session", JSON.stringify({
           sessionToken,
           questionNumber,
           maxQuestions,
@@ -1199,7 +1277,8 @@
         }
         const data = await res.json();
         sessionToken = data.sessionToken || "";
-        sessionKey = data.sessionSalt ? await deriveSessionKey(sessionToken, data.sessionSalt) : null;
+        window.__ambiSessionToken = sessionToken;
+        sessionKey = sessionToken ? await deriveSessionKey(sessionToken) : null;
         questionNumber = 0;
         correctCount = 0;
         sessionStartedAt = Date.now();
@@ -1212,15 +1291,25 @@
         }
       }
 
-      async function deriveSessionKey(token, saltHex) {
-        const secret = "local-development-session-secret-change-before-deployment";
-        const salt = hexToBytes(saltHex);
-        const input = new TextEncoder().encode(`${token}:${secret}`);
-        const saltKey = await crypto.subtle.importKey("raw", salt, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-        const prk = new Uint8Array(await crypto.subtle.sign("HMAC", saltKey, input));
-        const infoKey = await crypto.subtle.importKey("raw", prk, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-        const info = new TextEncoder().encode("3d-ambi-session-key\u0001");
-        return new Uint8Array(await crypto.subtle.sign("HMAC", infoKey, info));
+      async function deriveSessionKey(token) {
+        const keyMaterial = await crypto.subtle.importKey(
+          "raw",
+          new TextEncoder().encode(token),
+          "HKDF",
+          false,
+          ["deriveBits"]
+        );
+        const bits = await crypto.subtle.deriveBits(
+          {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: new TextEncoder().encode("3d-ambi-v1"),
+            info: new TextEncoder().encode("session-key")
+          },
+          keyMaterial,
+          256
+        );
+        return new Uint8Array(bits);
       }
 
       async function completeSession() {
@@ -1230,11 +1319,12 @@
           body: JSON.stringify({ sessionToken })
         });
         clearInterval(timerId);
-        const data = res.ok ? await res.json() : { score: maxQuestions ? correctCount / maxQuestions : 0 };
-        const score = Math.round((data.score || 0) * 100);
-        const pass = score >= 70;
-        resultText.textContent = `Score: ${score}%. ${pass ? "You passed." : "Your session has been submitted for review."}`;
-        localStorage.removeItem("ambiSession");
+        const resultRes = await fetch(`${API_BASE}/api/session/result?token=${encodeURIComponent(sessionToken)}`);
+        const result = resultRes.ok ? await resultRes.json() : { score: 0, total: maxQuestions, passed: false, timeTakenMs: 0 };
+        const minutes = Math.floor(result.timeTakenMs / 60000);
+        const seconds = Math.floor((result.timeTakenMs % 60000) / 1000);
+        resultText.textContent = `Score: ${result.score} / ${result.total} correct. ${result.passed ? "Well done - you passed." : "Keep practising - you did not reach the passing threshold."} Time taken: ${minutes}m ${seconds}s.`;
+        localStorage.removeItem("ambi_session");
         showScreen("complete");
       }
 
@@ -1310,15 +1400,17 @@
         startSession();
       });
 
-      resumeBtn.addEventListener("click", () => {
-        const saved = JSON.parse(localStorage.getItem("ambiSession") || "null");
+      resumeBtn.addEventListener("click", async () => {
+        const saved = JSON.parse(localStorage.getItem("ambi_session") || "null");
         if (!saved) return;
         sessionToken = saved.sessionToken;
+        sessionKey = await deriveSessionKey(sessionToken);
         questionNumber = saved.questionNumber || 0;
         maxQuestions = saved.maxQuestions || 10;
         correctCount = saved.correctCount || 0;
         sessionStartedAt = saved.sessionStartedAt || Date.now();
-        startLivenessGesture();
+        showScreen("test");
+        startQuestion();
       });
 
       mobileContinueBtn.addEventListener("click", () => {
@@ -1339,9 +1431,19 @@
 
       updateStatus();
       render();
-      if (localStorage.getItem("ambiSession")) {
-        resumeBtn.style.display = "block";
-      }
+      (async () => {
+        const saved = JSON.parse(localStorage.getItem("ambi_session") || "null");
+        if (!saved || !saved.sessionToken) return;
+        const res = await fetch(`${API_BASE}/api/session/status?token=${encodeURIComponent(saved.sessionToken)}`).catch(() => null);
+        if (res && res.ok) {
+          const status = await res.json();
+          if (status.status === "in_progress" && !status.expired) {
+            resumeBtn.style.display = "block";
+            return;
+          }
+        }
+        localStorage.removeItem("ambi_session");
+      })();
       setInterval(saveSessionState, 10000);
       window.addEventListener("online", flushAnswerQueue);
       if (inviteToken) {
@@ -1384,6 +1486,7 @@
       setInterval(checkRecovery, 500);
       function animationLoop() {
         if (currentQuestionId) {
+          syncAnswerOptionsToAngle();
           render();
         }
         requestAnimationFrame(animationLoop);
@@ -1398,6 +1501,29 @@
           }));
         }
       });
+      window.addEventListener("beforeunload", (event) => {
+        if (sessionToken && questionNumber > 0 && questionNumber < maxQuestions) {
+          event.preventDefault();
+          event.returnValue = "";
+          queueEvent("tab_close_attempt");
+        }
+      });
+      } catch (err) {
+        document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
+        const errorScreen = document.getElementById("screen-error");
+        const errorTextNode = document.getElementById("errorText");
+        if (errorScreen) errorScreen.classList.add("active");
+        if (errorTextNode) errorTextNode.textContent = "Something went wrong. Your progress has been saved.";
+        fetch(`${location.origin}/api/session/error`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionToken: window.__ambiSessionToken || "",
+            message: err && err.message,
+            stack: err && err.stack
+          })
+        }).catch(() => {});
+      }
     })();
   </script>
 </body>

@@ -45,6 +45,17 @@
       font-weight: 600;
     }
 
+    .live-badge {
+      display: inline-flex;
+      min-width: 26px;
+      justify-content: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: #dc2626;
+      color: #ffffff;
+      font-size: 12px;
+    }
+
     .nav-btn {
       padding: 10px 12px;
       border-radius: 8px;
@@ -239,9 +250,10 @@
 
   <div id="dashboard" class="layout" style="display:none;">
     <aside class="sidebar">
-      <div class="brand">Admin</div>
+      <div class="brand">Admin <span id="liveBadge" class="live-badge">0</span></div>
       <button class="nav-btn active" data-screen="sessions">Sessions</button>
       <button class="nav-btn" data-screen="questions">Questions</button>
+      <button class="nav-btn" data-screen="questionBank">Question Bank</button>
       <button class="nav-btn" data-screen="testSets">Test Sets</button>
       <button class="nav-btn" data-screen="mobile">Mobile access</button>
       <button class="nav-btn" data-screen="settings">Settings</button>
@@ -384,6 +396,25 @@
         </div>
       </section>
 
+      <section id="screen-questionBank" class="screen">
+        <div class="panel">
+          <h2>Decoy Health</h2>
+          <div id="decoyHealthSummary" class="muted"></div>
+          <table class="table" id="decoyAuditTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Question</th>
+                <th>Left</th>
+                <th>Right</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="screen-questions" class="screen">
         <div class="panel">
           <h2>Questions</h2>
@@ -482,6 +513,7 @@
       const screens = {
         sessions: document.getElementById("screen-sessions"),
         questions: document.getElementById("screen-questions"),
+        questionBank: document.getElementById("screen-questionBank"),
         testSets: document.getElementById("screen-testSets"),
         mobile: document.getElementById("screen-mobile"),
         settings: document.getElementById("screen-settings")
@@ -493,6 +525,7 @@
       const sessionStatusFilter = document.getElementById("sessionStatusFilter");
       const sessionIntegrityMin = document.getElementById("sessionIntegrityMin");
       const liveSessionsTable = document.getElementById("liveSessionsTable").querySelector("tbody");
+      const liveBadge = document.getElementById("liveBadge");
       const sessionDetail = document.getElementById("sessionDetail");
       const detailMeta = document.getElementById("detailMeta");
       const detailIntegrity = document.getElementById("detailIntegrity");
@@ -511,6 +544,8 @@
       const questionSearch = document.getElementById("questionSearch");
       const questionCategoryFilter = document.getElementById("questionCategoryFilter");
       const questionDifficultyFilter = document.getElementById("questionDifficultyFilter");
+      const decoyHealthSummary = document.getElementById("decoyHealthSummary");
+      const decoyAuditTable = document.getElementById("decoyAuditTable").querySelector("tbody");
       const testSetsTable = document.getElementById("testSetsTable").querySelector("tbody");
       const setName = document.getElementById("setName");
       const setDescription = document.getElementById("setDescription");
@@ -693,11 +728,42 @@
         const res = await fetch(`${API_BASE}/api/admin/live-sessions`, { headers: authHeaders() });
         if (!res.ok) return;
         const data = await res.json();
+        liveBadge.textContent = data.length.toString();
         liveSessionsTable.innerHTML = "";
         data.forEach((item) => {
           const row = document.createElement("tr");
           row.innerHTML = `<td>${escapeHtml(item.name)}</td><td>${item.currentQuestion}</td><td>${Math.round(item.elapsedSec / 60)} min</td><td>${Math.round(item.headCompliance * 100)}%</td>`;
           liveSessionsTable.appendChild(row);
+        });
+      }
+
+      async function loadDecoyAudit() {
+        if (!adminToken) return;
+        const res = await fetch(`${API_BASE}/api/admin/decoy-audit`, { headers: authHeaders() });
+        if (!res.ok) return;
+        const data = await res.json();
+        const complete = data.filter((item) => item.status === "complete").length;
+        decoyHealthSummary.textContent = `${complete} complete, ${data.length - complete} incomplete`;
+        decoyAuditTable.innerHTML = "";
+        data.forEach((item) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${item.id}</td>
+            <td>${escapeHtml(item.question.slice(0, 60))}</td>
+            <td>${item.leftOk ? "✓" : "✗"}</td>
+            <td>${item.rightOk ? "✓" : "✗"}</td>
+            <td><button data-id="${item.id}">Regenerate</button></td>
+          `;
+          row.querySelector("button").addEventListener("click", async () => {
+            await fetch(`${API_BASE}/api/admin/question/${item.id}/regenerate-decoys`, {
+              method: "POST",
+              headers: authHeaders(),
+              body: "{}"
+            });
+            await loadDecoyAudit();
+            await loadQuestions();
+          });
+          decoyAuditTable.appendChild(row);
         });
       }
 
@@ -829,6 +895,7 @@
         await loadSessions();
         await loadLiveSessions();
         await loadQuestions();
+        await loadDecoyAudit();
         await loadTestSets();
         await loadSettings();
       }

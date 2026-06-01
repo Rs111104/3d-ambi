@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   session_key TEXT NOT NULL,
   session_nonce TEXT NOT NULL DEFAULT '',
   questions_served INTEGER NOT NULL DEFAULT 0,
+  integrity_score INTEGER,
   delivered_index INTEGER NOT NULL DEFAULT -1,
   delivered_question_id INTEGER,
   issued_at_ms INTEGER,
@@ -192,6 +193,14 @@ CREATE TABLE IF NOT EXISTS session_answers (
     head_compliance REAL NOT NULL,
     server_received_at INTEGER,
     created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS question_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT NOT NULL,
+    question_id INTEGER NOT NULL,
+    question_index INTEGER NOT NULL,
+    served_at REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS session_events (
@@ -284,6 +293,7 @@ def init_db():
                 "ALTER TABLE questions ADD COLUMN decoy_right_quality INTEGER NOT NULL DEFAULT 8",
                 "ALTER TABLE sessions ADD COLUMN session_nonce TEXT NOT NULL DEFAULT ''",
                 "ALTER TABLE sessions ADD COLUMN questions_served INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE sessions ADD COLUMN integrity_score INTEGER",
                 "ALTER TABLE sessions ADD COLUMN delivered_index INTEGER NOT NULL DEFAULT -1",
                 "ALTER TABLE sessions ADD COLUMN delivered_question_id INTEGER",
                 "ALTER TABLE sessions ADD COLUMN issued_at_ms INTEGER",
@@ -314,6 +324,7 @@ def init_db():
     ensure_admin_user()
     ensure_default_settings()
     ensure_question_tags()
+    validate_decoys_on_startup()
 
 
 def ensure_question_tags():
@@ -436,7 +447,7 @@ def insert_question(payload):
                     subject, difficulty, question_text, options_json, correct_index,
                     decoy_left_text, decoy_left_options_json, decoy_left_quality,
                     decoy_right_text, decoy_right_options_json, decoy_right_quality, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     payload["subject"],
@@ -474,11 +485,11 @@ def insert_session_meta(token, name):
             conn.close()
 
 
-def derive_session_key(token, nonce_hex):
-    ikm = f"{token}:{SESSION_SECRET}".encode("utf-8")
-    salt = bytes.fromhex(nonce_hex)
+def derive_session_key(token, nonce_hex=None):
+    ikm = token.encode("utf-8")
+    salt = b"3d-ambi-v1"
     prk = hmac.new(salt, ikm, hashlib.sha256).digest()
-    okm = hmac.new(prk, b"3d-ambi-session-key\x01", hashlib.sha256).digest()
+    okm = hmac.new(prk, b"session-key\x01", hashlib.sha256).digest()
     return okm.hex()
 
 
@@ -508,7 +519,7 @@ def create_question_order(set_id=None):
 def create_session(name, set_id=None, invite_token=None):
     token = str(uuid.uuid4())
     session_nonce = secrets.token_bytes(16).hex()
-    session_key = derive_session_key(token, session_nonce)
+    session_key = derive_session_key(token)
     question_order = create_question_order(set_id)
     with DB_LOCK:
         conn = db_connect()
@@ -530,7 +541,7 @@ def create_session(name, set_id=None, invite_token=None):
         finally:
             conn.close()
     insert_session_meta(token, name)
-    return token, session_nonce
+    return token
 
 
 def get_or_create_session(token):
@@ -550,7 +561,7 @@ def get_or_create_session(token):
                     return row
             token = str(uuid.uuid4())
             session_nonce = secrets.token_bytes(16).hex()
-            session_key = derive_session_key(token, session_nonce)
+            session_key = derive_session_key(token)
             question_order = create_question_order()
             conn.execute(
                 "INSERT INTO sessions (token, next_index, session_key, session_nonce, question_order_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -586,6 +597,10 @@ def mark_question_issued(token, index, question_id):
                 WHERE token = ?
                 """,
                 (index, question_id, int(time.time() * 1000), token)
+            )
+            conn.execute(
+                "INSERT INTO question_log (token, question_id, question_index, served_at) VALUES (?, ?, ?, ?)",
+                (token, question_id, index, time.time())
             )
             conn.commit()
         finally:
@@ -652,12 +667,22 @@ def record_answer(token, question_id, answer_index, time_ms, head_compliance):
                 return False, "question_not_served"
             if int(session_row["delivered_question_id"]) != int(question_id):
                 return False, "question_out_of_sequence"
-            time_limit_ms = int(get_setting("time_limit", "20")) * 1000
-            server_time_ms = max(0, int(time.time() * 1000) - int(session_row["issued_at_ms"]))
-            if server_time_ms < 2000:
-                return False, "answer_too_fast"
-            if server_time_ms > time_limit_ms + 30000:
-                return False, "answer_stale"
+            log_row = conn.execute(
+                "SELECT served_at FROM question_log WHERE token = ? AND question_id = ? ORDER BY id DESC LIMIT 1",
+                (token, question_id)
+            ).fetchone()
+            served_at = float(log_row["served_at"]) if log_row else int(session_row["issued_at_ms"]) / 1000.0
+            elapsed_sec = time.time() - served_at
+            time_limit_sec = int(get_setting("time_limit", "20"))
+            server_time_ms = max(0, int(elapsed_sec * 1000))
+            if elapsed_sec < 1.5:
+                conn.execute("INSERT INTO session_events (token, event_type, detail, created_at) VALUES (?, ?, ?, ?)", (token, "too_fast", None, int(time.time())))
+                conn.commit()
+                return False, "too_fast"
+            if elapsed_sec > time_limit_sec + 60:
+                conn.execute("INSERT INTO session_events (token, event_type, detail, created_at) VALUES (?, ?, ?, ?)", (token, "too_slow", None, int(time.time())))
+                conn.commit()
+                return False, "too_slow"
             row = conn.execute("SELECT correct_index FROM questions WHERE id = ?", (question_id,)).fetchone()
             correct = 1 if row and int(row["correct_index"]) == int(answer_index) else 0
             if abs(server_time_ms - int(time_ms)) > 3000:
@@ -777,12 +802,17 @@ def list_questions():
 
 
 def complete_session(token):
+    integrity = compute_integrity(list_session_answers(token), list_session_events(token))
     with DB_LOCK:
         conn = db_connect()
         try:
             conn.execute(
                 "UPDATE session_meta SET completed_at = ? WHERE token = ?",
                 (int(time.time()), token)
+            )
+            conn.execute(
+                "UPDATE sessions SET integrity_score = ? WHERE token = ?",
+                (integrity, token)
             )
             conn.execute(
                 "UPDATE candidate_invites SET status = ?, completed_at = ? WHERE session_token = ?",
@@ -823,13 +853,13 @@ def session_score(token):
 
 
 def compute_integrity(answers, events):
-    flagged_types = {"tab_hidden", "window_blur", "right_click", "devtools_open", "face_lost"}
+    flagged_types = {"tab_hidden", "window_blur", "devtools_open", "clipboard_attempt", "liveness_fail", "face_lost", "screen_capture_attempt", "right_click"}
     score = 100
-    score -= 15 * sum(1 for e in events if e["event_type"] in flagged_types)
+    score -= 15 * len({e["event_type"] for e in events if e["event_type"] in flagged_types})
     threshold = float(get_setting("head_compliance_threshold", "0.6"))
     score -= 10 * sum(1 for a in answers if float(a["head_compliance"]) < threshold)
     suspicious_timing = any(
-        e["event_type"] in ("timing_mismatch", "answer_too_fast", "answer_stale") for e in events
+        e["event_type"] in ("timing_mismatch", "too_fast", "too_slow", "answer_too_fast", "answer_stale") for e in events
     ) or any(int(a["time_ms"]) < 2000 for a in answers)
     if suspicious_timing:
         score -= 20
@@ -1048,6 +1078,52 @@ def regenerate_question_decoys(question_id):
             conn.close()
 
 
+def validate_decoys_on_startup():
+    missing = []
+    with DB_LOCK:
+        conn = db_connect()
+        try:
+            rows = conn.execute("SELECT * FROM questions ORDER BY id ASC").fetchall()
+            for row in rows:
+                left_missing = not row["decoy_left_text"] or len(row["decoy_left_text"].strip()) < 20
+                right_missing = not row["decoy_right_text"] or len(row["decoy_right_text"].strip()) < 20
+                if left_missing or right_missing:
+                    missing.append(row["id"])
+        finally:
+            conn.close()
+    if not missing:
+        return
+    if not LLM_API_KEY:
+        print(f"WARNING: {len(missing)} questions are missing decoys. Set LLM_API_KEY to auto-generate them.")
+        return
+    for question_id in missing:
+        regenerate_question_decoys(question_id)
+
+
+def decoy_audit_rows():
+    rows = list_questions()
+    out = []
+    for row in rows:
+        left_ok = bool(row["decoy_left_text"] and len(row["decoy_left_text"].strip()) >= 20)
+        right_ok = bool(row["decoy_right_text"] and len(row["decoy_right_text"].strip()) >= 20)
+        if left_ok and right_ok:
+            status = "complete"
+        elif left_ok:
+            status = "missing_right"
+        elif right_ok:
+            status = "missing_left"
+        else:
+            status = "missing_both"
+        out.append({
+            "id": row["id"],
+            "question": row["question_text"],
+            "leftOk": left_ok,
+            "rightOk": right_ok,
+            "status": status
+        })
+    return out
+
+
 def seed_if_needed():
     if fetch_question_count() > 0:
         return
@@ -1199,7 +1275,10 @@ def parse_json(handler):
     length = int(handler.headers.get("Content-Length", "0") or "0")
     body = handler.rfile.read(length) if length else b"{}"
     try:
-        return json.loads(body.decode("utf-8"))
+        payload = json.loads(body.decode("utf-8"))
+        if isinstance(payload, dict) and isinstance(payload.get("sessionToken"), str):
+            handler._token_tail = payload["sessionToken"][-6:]
+        return payload
     except json.JSONDecodeError:
         return {}
 
@@ -1242,13 +1321,13 @@ class Handler(BaseHTTPRequestHandler):
     def finish(self):
         try:
             latency_ms = int((time.time() - getattr(self, "_request_started", time.time())) * 1000)
-            token_suffix = ""
             print(json.dumps({
+                "ts": int(time.time()),
                 "method": getattr(self, "command", ""),
                 "path": getattr(self, "path", ""),
-                "session": token_suffix,
+                "token_tail": getattr(self, "_token_tail", None),
                 "status": getattr(self, "_response_status", 0),
-                "latency_ms": latency_ms
+                "ms": latency_ms
             }))
         except Exception:
             pass
@@ -1288,8 +1367,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 set_id = invite["set_id"]
                 name = invite["candidate_name"] or name
-            token, session_nonce = create_session(name, set_id, invite_token)
-            json_response(self, 200, {"sessionToken": token, "sessionSalt": session_nonce})
+            token = create_session(name, set_id, invite_token)
+            json_response(self, 200, {"sessionToken": token})
             return
 
         if self.path == "/api/session/next":
@@ -1479,6 +1558,21 @@ class Handler(BaseHTTPRequestHandler):
                 bad_request(self, "invalid_questionId")
                 return
             if not regenerate_question_decoys(int(question_id)):
+                json_response(self, 404, {"error": "question_not_found"})
+                return
+            json_response(self, 200, {"status": "ok"})
+            return
+
+        if self.path.startswith("/api/admin/question/") and self.path.endswith("/regenerate-decoys"):
+            if not require_admin(self):
+                return
+            parts = self.path.strip("/").split("/")
+            try:
+                question_id = int(parts[3])
+            except Exception:
+                bad_request(self, "invalid_questionId")
+                return
+            if not regenerate_question_decoys(question_id):
                 json_response(self, 404, {"error": "question_not_found"})
                 return
             json_response(self, 200, {"status": "ok"})
@@ -1709,6 +1803,24 @@ class Handler(BaseHTTPRequestHandler):
                 })
             json_response(self, 200, response)
             return
+        if path == "/api/admin/sessions/live":
+            if not require_admin(self):
+                return
+            response = []
+            for row in list_sessions():
+                if row["completed_at"] is not None:
+                    continue
+                answers = list_session_answers(row["token"])
+                compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
+                response.append({
+                    "token": row["token"],
+                    "name": row["name"],
+                    "currentQuestion": len(answers) + 1,
+                    "elapsedSec": int(time.time()) - row["started_at"],
+                    "headCompliance": compliance
+                })
+            json_response(self, 200, response)
+            return
         if path == "/api/admin/questions":
             if not require_admin(self):
                 return
@@ -1734,6 +1846,11 @@ class Handler(BaseHTTPRequestHandler):
                     }
                 })
             json_response(self, 200, response)
+            return
+        if path == "/api/admin/decoy-audit":
+            if not require_admin(self):
+                return
+            json_response(self, 200, decoy_audit_rows())
             return
         if path == "/api/admin/test-sets":
             if not require_admin(self):
@@ -1766,7 +1883,7 @@ class Handler(BaseHTTPRequestHandler):
             if not require_admin(self):
                 return
             rows = ["candidate name,date,score,integrity score,time taken,flagged events count"]
-            flagged_types = {"tab_hidden", "window_blur", "right_click", "devtools_open", "face_lost"}
+            flagged_types = {"tab_hidden", "window_blur", "right_click", "devtools_open", "face_lost", "clipboard_attempt", "liveness_fail", "screen_capture_attempt"}
             for row in list_sessions():
                 if row["completed_at"] is None:
                     continue
@@ -1795,6 +1912,49 @@ class Handler(BaseHTTPRequestHandler):
                 "candidateName": invite["candidate_name"],
                 "status": invite["status"],
                 "setId": invite["set_id"]
+            })
+            return
+        if path == "/api/session/status":
+            token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
+            if not token:
+                bad_request(self, "missing_token")
+                return
+            meta = None
+            with DB_LOCK:
+                conn = db_connect()
+                try:
+                    meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
+                finally:
+                    conn.close()
+            if not meta:
+                json_response(self, 404, {"error": "session_not_found"})
+                return
+            json_response(self, 200, {"status": "complete" if meta["completed_at"] else "in_progress", "expired": False})
+            return
+        if path == "/api/session/result":
+            token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
+            if not token:
+                bad_request(self, "missing_token")
+                return
+            answers = list_session_answers(token)
+            meta = None
+            with DB_LOCK:
+                conn = db_connect()
+                try:
+                    meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
+                finally:
+                    conn.close()
+            total = len(answers)
+            correct = sum(1 for a in answers if a["correct"] == 1)
+            passing = float(get_setting("passing_threshold", "0.7"))
+            score = (correct / total) if total else 0
+            time_taken_ms = int(((meta["completed_at"] or int(time.time())) - meta["started_at"]) * 1000) if meta else 0
+            json_response(self, 200, {
+                "score": correct,
+                "total": total,
+                "passed": score >= passing,
+                "timeTakenMs": time_taken_ms,
+                "passingThreshold": passing
             })
             return
         json_response(self, 404, {"error": "not_found"})
