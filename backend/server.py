@@ -12,6 +12,12 @@ import hashlib
 import hmac
 import secrets
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+except Exception:
+    pass
+
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
 HOST = os.environ.get("HOST", "127.0.0.1")
