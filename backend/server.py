@@ -8,7 +8,6 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
-import base64
 import hashlib
 import hmac
 import secrets
@@ -1193,28 +1192,6 @@ def json_response(handler, status, payload, extra_headers=None):
     handler.wfile.write(data)
 
 
-def encrypt_payload(session_key_hex, payload_obj):
-    key = bytes.fromhex(session_key_hex)
-    nonce = secrets.token_bytes(12)
-    plaintext = json.dumps(payload_obj).encode("utf-8")
-    out = bytearray(len(plaintext))
-    counter = 0
-    offset = 0
-    while offset < len(plaintext):
-        counter_bytes = counter.to_bytes(4, "big")
-        block = hmac.new(key, nonce + counter_bytes, hashlib.sha256).digest()
-        for i in range(min(32, len(plaintext) - offset)):
-            out[offset + i] = plaintext[offset + i] ^ block[i]
-        offset += 32
-        counter += 1
-    tag = hmac.new(key, nonce + bytes(out), hashlib.sha256).digest()
-    return {
-        "nonce": base64.b64encode(nonce).decode("utf-8"),
-        "ciphertext": base64.b64encode(bytes(out)).decode("utf-8"),
-        "tag": base64.b64encode(tag).decode("utf-8")
-    }
-
-
 def check_rate_limit(ip):
     now = time.time()
     window = RATE_LIMIT.get(ip, [])
@@ -1416,7 +1393,7 @@ class Handler(BaseHTTPRequestHandler):
                 "timeLimit": time_limit,
                 "totalQuestions": len(json.loads(session_row["question_order_json"] or "[]")) or fetch_question_count()
             }
-            json_response(self, 200, {"payload": encrypt_payload(session_row["session_key"], response)})
+            json_response(self, 200, response)
             return
 
         if self.path == "/api/session/answer":

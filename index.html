@@ -139,6 +139,7 @@
       padding: 16px;
       background: #f9fafb;
       user-select: none;
+      overflow: hidden;
     }
 
     .camera-preview {
@@ -250,6 +251,13 @@
       font-size: 15px;
       cursor: pointer;
       transition: border-color 0.15s ease;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .answer-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
     }
 
     .answer-btn:hover {
@@ -272,8 +280,34 @@
     }
 
     @media (max-width: 720px) {
+      .app {
+        padding: 18px 12px 32px;
+        gap: 16px;
+      }
+
+      .header {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .screen {
+        min-height: 360px;
+      }
+
+      .canvas-wrap {
+        padding: 8px;
+        border-radius: 10px;
+      }
+
       .answers {
         grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .answer-btn {
+        padding: 12px;
+        font-size: 14px;
       }
     }
   </style>
@@ -423,6 +457,16 @@
       const inviteToken = params.get("invite") || "";
       const isSmallScreen = window.innerWidth < 768;
       let isMobile = isSmallScreen || matchMedia("(pointer: coarse)").matches;
+      const CONFIG = {
+        maxAngle: 18,
+        transition: 8,
+        validZone: 15,
+        maxQuestions: 10,
+        cameraFallbackMs: 1000,
+        faceMissingMs: 2000,
+        submitRetries: 3,
+        submitRetryDelayMs: 500
+      };
 
       const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
       if (!gl) {
@@ -432,7 +476,6 @@
       }
 
       let sessionToken = "";
-      let sessionKey = null;
       let currentQuestionId = null;
       let realOptions = [];
       let decoyLeftOptions = [];
@@ -442,19 +485,19 @@
       let questionStart = 0;
       let timerId = null;
       let questionNumber = 0;
-      let maxQuestions = 10;
+      let maxQuestions = CONFIG.maxQuestions;
       let correctCount = 0;
       let sessionStartedAt = 0;
       const answerQueue = [];
+      let nextQuestionCache = null;
+      let nextQuestionPromise = null;
+      let answerLocked = false;
       let trackingAvailable = true;
       let calibrationStart = 0;
       let calibrated = false;
       let calibrationSamples = [];
       let baseline = 0;
       let angleDeg = 0;
-      const maxAngle = 18;
-      const transition = 8;
-      const validZone = 15;
       let yawSamples = [];
       let lastTrackingSeen = 0;
       let recoveryMode = false;
@@ -490,7 +533,7 @@ varying vec2 v_uv;
 uniform sampler2D u_center;
 uniform sampler2D u_left;
 uniform sampler2D u_right;
-uniform float u_angle;
+uniform float uAngle;
 uniform float u_time;
 
 float hash(vec2 p) {
@@ -498,14 +541,14 @@ float hash(vec2 p) {
 }
 
 void main() {
-  float absAngle = abs(u_angle);
+  float absAngle = abs(uAngle);
 
   // UV jitter: adds per-frame micro-offset to decoy layers to defeat frame-averaging attacks
   float jitter = (hash(v_uv + u_time * 0.017) - 0.5) * 0.006;
   vec2 jitteredUV = v_uv + vec2(jitter, 0.0);
 
   // Parallax drift: decoy shifts horizontally as angle increases, creating depth illusion
-  float parallax = (u_angle / 90.0) * 0.07;
+  float parallax = (uAngle / 90.0) * 0.07;
   vec2 decoyUV = clamp(jitteredUV + vec2(parallax, 0.0), 0.0, 1.0);
 
   vec4 centerColor = texture2D(u_center, v_uv);
@@ -514,7 +557,7 @@ void main() {
 
   // Core blend: real question at 0–8°, transition at 8–18°, decoy-only beyond 18°
   float blend = smoothstep(8.0, 18.0, absAngle);
-  vec4 decoy = u_angle < 0.0 ? leftColor : rightColor;
+  vec4 decoy = uAngle < 0.0 ? leftColor : rightColor;
   vec4 mixed = mix(centerColor, decoy, blend);
 
   // Noise layer beyond 35 deg: corrupt the image further to defeat extreme-angle photography
@@ -531,6 +574,7 @@ void main() {
 }
 `;
 
+      // Compile a WebGL shader and surface build errors.
       function createShader(type, source) {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, source);
@@ -543,6 +587,7 @@ void main() {
         return shader;
       }
 
+      // Link the WebGL program used for angle-dependent compositing.
       function createProgram(vsSource, fsSource) {
         const program = gl.createProgram();
         const vs = createShader(gl.VERTEX_SHADER, vsSource);
@@ -581,7 +626,7 @@ void main() {
         u_center: gl.getUniformLocation(program, "u_center"),
         u_left: gl.getUniformLocation(program, "u_left"),
         u_right: gl.getUniformLocation(program, "u_right"),
-        u_angle: gl.getUniformLocation(program, "u_angle"),
+        uAngle: gl.getUniformLocation(program, "uAngle"),
         u_time: gl.getUniformLocation(program, "u_time")
       };
 
@@ -594,6 +639,7 @@ void main() {
       textCanvas.width = 1024;
       textCanvas.height = 512;
 
+      // Split long plain text into readable canvas lines.
       function wrapText(text, maxChars) {
         const words = text.split(/\s+/).filter(Boolean);
         const lines = [];
@@ -611,6 +657,7 @@ void main() {
         return lines;
       }
 
+      // Draw wrapped text into the backing canvas.
       function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
         const words = text.split(/\s+/).filter(Boolean);
         let line = "";
@@ -631,6 +678,7 @@ void main() {
         return y;
       }
 
+      // Draw the question, answers, and watermark before texture upload.
       function drawText(questionText, options, questionLabel) {
         textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
         textCtx.fillStyle = "#ffffff";
@@ -654,8 +702,18 @@ void main() {
           textCtx.fillStyle = "#111827";
           textCtx.fillText(`${labels[i]}. ${options[i]}`, 50, boxY + 8);
         }
+        const stamp = new Date().toLocaleString();
+        const watermark = `${candidateName.value.trim() || "Candidate"} - ${stamp}`;
+        textCtx.save();
+        textCtx.textAlign = "right";
+        textCtx.textBaseline = "bottom";
+        textCtx.font = "500 18px Arial";
+        textCtx.fillStyle = "rgba(17, 24, 39, 0.34)";
+        textCtx.fillText(watermark, textCanvas.width - 28, textCanvas.height - 22);
+        textCtx.restore();
       }
 
+      // Upload a freshly drawn text canvas into a WebGL texture.
       function uploadTexture(texture, questionText, options, questionLabel) {
         drawText(questionText, options, questionLabel);
         gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -667,6 +725,7 @@ void main() {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       }
 
+      // Keep the WebGL drawing buffer matched to the displayed canvas size.
       function resizeCanvas() {
         const ratio = window.devicePixelRatio || 1;
         const width = Math.floor(canvas.clientWidth * ratio);
@@ -677,6 +736,7 @@ void main() {
         }
       }
 
+      // Render the active real/decoy texture blend for the current head angle.
       function render() {
         resizeCanvas();
         gl.viewport(0, 0, canvas.width, canvas.height);
@@ -690,17 +750,19 @@ void main() {
         gl.activeTexture(gl.TEXTURE2);
         gl.bindTexture(gl.TEXTURE_2D, rightTex);
 
-        gl.uniform1f(uniforms.u_angle, angleDeg);
+        gl.uniform1f(uniforms.uAngle, angleDeg);
         gl.uniform1f(uniforms.u_time, performance.now() / 1000.0);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
       }
 
+      // Switch the visible application screen.
       function showScreen(name) {
         Object.values(screens).forEach((screen) => screen.classList.remove("active"));
         screens[name].classList.add("active");
       }
 
+      // Update the compact tracking status indicator.
       function updateStatus() {
         if (recoveryMode) {
           statusDot.className = "status-dot status-dot--warn";
@@ -717,11 +779,12 @@ void main() {
           statusText.textContent = "Calibrating";
           return;
         }
-        const inZone = Math.abs(angleDeg) <= validZone;
+        const inZone = Math.abs(angleDeg) <= CONFIG.validZone;
         statusDot.className = inZone ? "status-dot status-dot--good" : "status-dot status-dot--bad";
         statusText.textContent = inZone ? "Head aligned" : "Out of zone";
       }
 
+      // Accumulate how long the candidate stays inside the valid viewing zone.
       function trackCompliance(now, inZone) {
         if (!lastYawTs) {
           lastYawTs = now;
@@ -737,6 +800,7 @@ void main() {
         lastInZone = inZone;
       }
 
+      // Process a fresh yaw reading from camera or motion sensors.
       function onYaw(rawYaw) {
         lastTrackingSeen = performance.now();
         rawYawWindow.push({ t: performance.now(), yaw: rawYaw });
@@ -790,8 +854,8 @@ void main() {
             finishCalibration();
           }
         }
-        angleDeg = Math.max(-maxAngle, Math.min(maxAngle, filteredYaw - baseline));
-        const inZone = Math.abs(angleDeg) <= validZone;
+        angleDeg = Math.max(-CONFIG.maxAngle, Math.min(CONFIG.maxAngle, filteredYaw - baseline));
+        const inZone = Math.abs(angleDeg) <= CONFIG.validZone;
         if (!recoveryMode) {
           trackCompliance(performance.now(), inZone);
         }
@@ -801,6 +865,7 @@ void main() {
         render();
       }
 
+      // Ask the candidate to make a small head movement before calibration.
       function startLivenessGesture() {
         if (usingGyro) {
           startCalibration();
@@ -828,6 +893,7 @@ void main() {
         requestAnimationFrame(tick);
       }
 
+      // Advance the liveness gesture once both left and right movement are observed.
       function updateLivenessGesture(rawYaw) {
         livenessMinYaw = Math.min(livenessMinYaw, rawYaw);
         livenessMaxYaw = Math.max(livenessMaxYaw, rawYaw);
@@ -838,7 +904,20 @@ void main() {
         }
       }
 
+      // Start webcam preview and MediaPipe face tracking.
       async function initCamera() {
+        let cameraSettled = false;
+        setTimeout(() => {
+          if (!cameraSettled && !calibrated) {
+            trackingAvailable = false;
+            calibrated = true;
+            baseline = 0;
+            angleDeg = 0;
+            queueEvent("camera_unavailable");
+            updateStatus();
+            render();
+          }
+        }, CONFIG.cameraFallbackMs);
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const hasCamera = devices.some((device) => device.kind === "videoinput");
@@ -850,10 +929,12 @@ void main() {
           previewVideo.srcObject = stream;
           await inputVideo.play();
           await previewVideo.play().catch(() => {});
+          cameraSettled = true;
           setupFaceMesh();
         } catch (err) {
+          cameraSettled = true;
           trackingAvailable = false;
-          calibrated = false;
+          calibrated = true;
           baseline = 0;
           angleDeg = 0;
           updateStatus();
@@ -862,6 +943,7 @@ void main() {
         }
       }
 
+      // Enable device-orientation tracking for mobile sessions.
       function initGyro() {
         if (!("DeviceOrientationEvent" in window)) {
           return false;
@@ -877,6 +959,7 @@ void main() {
         return true;
       }
 
+      // Request mobile motion permission and continue the session setup.
       async function enableMobileTracking() {
         if (
           typeof DeviceOrientationEvent !== "undefined"
@@ -903,21 +986,25 @@ void main() {
         }
       }
 
+      // Detect continuous face disappearance while a question is active.
       function checkRecovery() {
         if (!calibrated || usingGyro || !currentQuestionId || recoveryMode) {
           return;
         }
-        if (lastTrackingSeen && performance.now() - lastTrackingSeen > 2000) {
+        const lastSeen = lastTrackingSeen || questionStart;
+        if (lastSeen && performance.now() - lastSeen > CONFIG.faceMissingMs) {
           recoveryMode = true;
           faceLostStarted = performance.now();
           recoveryMsg.classList.add("active");
           updateStatus();
           if (!faceLostLogged) {
             faceLostLogged = true;
+            queueEvent("face_missing");
           }
         }
       }
 
+      // Wire MediaPipe FaceMesh callbacks into yaw estimation.
       function setupFaceMesh() {
         const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
         faceMesh.setOptions({
@@ -959,6 +1046,7 @@ void main() {
         camera.start();
       }
 
+      // Collect a stable straight-ahead baseline before showing questions.
       function startCalibration() {
         calibrated = false;
         calibrationSamples = [];
@@ -984,6 +1072,7 @@ void main() {
         }, duration + 200);
       }
 
+      // Finish calibration and fall back to straight-ahead when no samples exist.
       function finishCalibration() {
         if (calibrated) {
           return;
@@ -1007,6 +1096,7 @@ void main() {
         startQuestion();
       }
 
+      // Reset per-question head-position compliance counters.
       function resetComplianceTracking() {
         lastYawTs = 0;
         inZoneMs = 0;
@@ -1014,6 +1104,7 @@ void main() {
         lastInZone = true;
       }
 
+      // Fetch the next question as plain HTTPS JSON.
       async function fetchNextQuestion() {
         const response = await fetch(`${API_BASE}/api/session/next`, {
           method: "POST",
@@ -1024,93 +1115,27 @@ void main() {
           throw new Error("question_fetch_failed");
         }
         const data = await response.json();
-        if (!data.payload) {
+        if (!data.questionId) {
           throw new Error("invalid_payload");
         }
-        return decryptPayload(data.payload);
+        return data;
       }
 
-      function hexToBytes(hex) {
-        const out = new Uint8Array(hex.length / 2);
-        for (let i = 0; i < out.length; i += 1) {
-          out[i] = parseInt(hex.substr(i * 2, 2), 16);
-        }
-        return out;
+      // Preload a question while the candidate is answering the current one.
+      function preloadNextQuestion() {
+        if (nextQuestionCache || nextQuestionPromise || questionNumber + 1 >= maxQuestions) return;
+        nextQuestionPromise = fetchNextQuestion()
+          .then((data) => {
+            nextQuestionCache = data;
+            return data;
+          })
+          .catch(() => null)
+          .finally(() => {
+            nextQuestionPromise = null;
+          });
       }
 
-      function base64ToBytes(base64) {
-        const bin = atob(base64);
-        const bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i += 1) {
-          bytes[i] = bin.charCodeAt(i);
-        }
-        return bytes;
-      }
-
-      async function hmacSha256(keyBytes, dataBytes) {
-        const key = await crypto.subtle.importKey(
-          "raw",
-          keyBytes,
-          { name: "HMAC", hash: "SHA-256" },
-          false,
-          ["sign"]
-        );
-        const sig = await crypto.subtle.sign("HMAC", key, dataBytes);
-        return new Uint8Array(sig);
-      }
-
-      async function decryptPayload(payload) {
-        if (!sessionKey) {
-          throw new Error("missing_session_key");
-        }
-        const nonce = base64ToBytes(payload.nonce);
-        const ciphertext = base64ToBytes(payload.ciphertext);
-        const tag = base64ToBytes(payload.tag);
-        const check = await hmacSha256(sessionKey, concatBytes(nonce, ciphertext));
-        if (!timingSafeEqual(check, tag)) {
-          throw new Error("invalid_tag");
-        }
-        const plaintext = await xorDecrypt(sessionKey, nonce, ciphertext);
-        const text = new TextDecoder().decode(plaintext);
-        return JSON.parse(text);
-      }
-
-      function concatBytes(a, b) {
-        const out = new Uint8Array(a.length + b.length);
-        out.set(a, 0);
-        out.set(b, a.length);
-        return out;
-      }
-
-      function timingSafeEqual(a, b) {
-        if (a.length !== b.length) {
-          return false;
-        }
-        let diff = 0;
-        for (let i = 0; i < a.length; i += 1) {
-          diff |= a[i] ^ b[i];
-        }
-        return diff === 0;
-      }
-
-      async function xorDecrypt(keyBytes, nonce, ciphertext) {
-        const out = new Uint8Array(ciphertext.length);
-        let counter = 0;
-        let offset = 0;
-        while (offset < ciphertext.length) {
-          const counterBytes = new Uint8Array([0, 0, 0, 0]);
-          const view = new DataView(counterBytes.buffer);
-          view.setUint32(0, counter, false);
-          const block = await hmacSha256(keyBytes, concatBytes(nonce, counterBytes));
-          for (let i = 0; i < Math.min(32, ciphertext.length - offset); i += 1) {
-            out[offset + i] = ciphertext[offset + i] ^ block[i];
-          }
-          offset += 32;
-          counter += 1;
-        }
-        return out;
-      }
-
+      // Apply question text to the real and decoy textures.
       function setQuestionTextures(data) {
         uploadTexture(centerTex, data.question, data.options, `Question ${questionNumber + 1}`);
         uploadTexture(leftTex, data.decoyLeft.question, data.decoyLeft.options, `Question ${questionNumber + 1}`);
@@ -1118,6 +1143,7 @@ void main() {
         render();
       }
 
+      // Replace visible answer buttons for the current viewing angle.
       function setAnswerButtons(options) {
         answerButtons.style.opacity = "0";
         setTimeout(() => {
@@ -1127,6 +1153,7 @@ void main() {
             const btn = document.createElement("button");
             btn.className = "answer-btn";
             btn.textContent = option;
+            btn.disabled = answerLocked;
             btn.addEventListener("click", () => submitAnswer(visibleOptionMode === "real" ? index : -1));
             answerButtons.appendChild(btn);
           });
@@ -1134,10 +1161,11 @@ void main() {
         }, 150);
       }
 
+      // Swap answer choices to match the real or decoy question currently visible.
       function syncAnswerOptionsToAngle() {
         if (!currentQuestionId) return;
         const absAngle = Math.abs(angleDeg);
-        const targetMode = absAngle > 15 ? (angleDeg < 0 ? "left" : "right") : (absAngle < 10 ? "real" : visibleOptionMode);
+        const targetMode = absAngle > CONFIG.validZone ? (angleDeg < 0 ? "left" : "right") : (absAngle < CONFIG.transition + 2 ? "real" : visibleOptionMode);
         if (targetMode === visibleOptionMode) return;
         visibleOptionMode = targetMode;
         if (targetMode === "left") {
@@ -1149,6 +1177,7 @@ void main() {
         }
       }
 
+      // Run the per-question countdown and auto-submit on timeout.
       function startTimer(seconds) {
         clearInterval(timerId);
         const start = performance.now();
@@ -1169,6 +1198,7 @@ void main() {
         }, 100);
       }
 
+      // Load the current question, render it, and begin timing.
       async function startQuestion() {
         if (questionNumber >= maxQuestions) {
           await completeSession();
@@ -1176,7 +1206,9 @@ void main() {
         }
         resetComplianceTracking();
         try {
-          const data = await fetchNextQuestion();
+          const data = nextQuestionCache || await fetchNextQuestion();
+          nextQuestionCache = null;
+          answerLocked = false;
           progressText.textContent = `Question ${questionNumber + 1} of ${data.totalQuestions || maxQuestions}`;
           currentQuestionId = data.questionId;
           realOptions = data.options;
@@ -1196,10 +1228,15 @@ void main() {
         }
       }
 
+      // Submit the chosen answer once and immediately disable all choices.
       async function submitAnswer(answerIndex) {
-        if (!currentQuestionId) {
+        if (!currentQuestionId || answerLocked) {
           return;
         }
+        answerLocked = true;
+        answerButtons.querySelectorAll("button").forEach((button) => {
+          button.disabled = true;
+        });
         clearInterval(timerId);
         const timeMs = Math.max(0, Math.round(performance.now() - questionStart));
         const compliance = totalMs > 0 ? inZoneMs / totalMs : 1;
@@ -1219,24 +1256,34 @@ void main() {
         if (res && res.ok && answerIndex >= 0) {
           correctCount += 1;
         }
+        if (res && res.ok && questionNumber + 1 < maxQuestions) {
+          preloadNextQuestion();
+          if (nextQuestionPromise) {
+            await nextQuestionPromise.catch(() => null);
+          }
+        }
         questionNumber += 1;
         saveSessionState();
         startQuestion();
       }
 
+      // Retry failed answer submissions before queueing for later flush.
       async function postWithRetry(url, options) {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
+        for (let attempt = 0; attempt < CONFIG.submitRetries; attempt += 1) {
           try {
             const res = await fetch(url, options);
             if (res.ok) return res;
           } catch (err) {}
-          await new Promise((resolve) => setTimeout(resolve, 250 * Math.pow(2, attempt)));
+          if (attempt < CONFIG.submitRetries - 1) {
+            await new Promise((resolve) => setTimeout(resolve, CONFIG.submitRetryDelayMs));
+          }
         }
         answerQueue.push({ url, options });
         localStorage.setItem("ambiAnswerQueue", JSON.stringify(answerQueue));
         return null;
       }
 
+      // Send locally queued answers after the network returns.
       async function flushAnswerQueue() {
         const saved = JSON.parse(localStorage.getItem("ambiAnswerQueue") || "[]");
         while (saved.length) {
@@ -1251,6 +1298,7 @@ void main() {
         localStorage.setItem("ambiAnswerQueue", JSON.stringify(saved));
       }
 
+      // Persist enough session state to offer resume.
       function saveSessionState() {
         if (!sessionToken) return;
         localStorage.setItem("ambi_session", JSON.stringify({
@@ -1262,6 +1310,7 @@ void main() {
         }));
       }
 
+      // Create a server session and enter the setup flow.
       async function startSession() {
         const name = candidateName.value.trim() || "Candidate";
         const res = await fetch(`${API_BASE}/api/session/start`, {
@@ -1278,40 +1327,26 @@ void main() {
         const data = await res.json();
         sessionToken = data.sessionToken || "";
         window.__ambiSessionToken = sessionToken;
-        sessionKey = sessionToken ? await deriveSessionKey(sessionToken) : null;
         questionNumber = 0;
         correctCount = 0;
         sessionStartedAt = Date.now();
         saveSessionState();
         flushEvents();
-        if (isMobile && !usingGyro) {
+        if (!trackingAvailable) {
+          setTimeout(() => {
+            calibrated = true;
+            angleDeg = 0;
+            showScreen("test");
+            startQuestion();
+          }, CONFIG.cameraFallbackMs);
+        } else if (isMobile && !usingGyro) {
           showScreen("mobile");
         } else {
           startLivenessGesture();
         }
       }
 
-      async function deriveSessionKey(token) {
-        const keyMaterial = await crypto.subtle.importKey(
-          "raw",
-          new TextEncoder().encode(token),
-          "HKDF",
-          false,
-          ["deriveBits"]
-        );
-        const bits = await crypto.subtle.deriveBits(
-          {
-            name: "HKDF",
-            hash: "SHA-256",
-            salt: new TextEncoder().encode("3d-ambi-v1"),
-            info: new TextEncoder().encode("session-key")
-          },
-          keyMaterial,
-          256
-        );
-        return new Uint8Array(bits);
-      }
-
+      // Mark the session complete and show the result summary.
       async function completeSession() {
         const res = await fetch(`${API_BASE}/api/session/complete`, {
           method: "POST",
@@ -1329,6 +1364,7 @@ void main() {
       }
 
       const pendingEvents = [];
+      // Queue a proctoring event or send it immediately when a session exists.
       function queueEvent(type, detail) {
         const event = { type, detail };
         if (!sessionToken) {
@@ -1342,6 +1378,7 @@ void main() {
         });
       }
 
+      // Flush proctoring events collected before the session token existed.
       function flushEvents() {
         if (!sessionToken || pendingEvents.length === 0) {
           return;
@@ -1383,17 +1420,20 @@ void main() {
 
       let devtoolsOpen = false;
       setInterval(() => {
-        const threshold = 160;
-        const widthDiff = Math.abs(window.outerWidth - window.innerWidth) > threshold;
-        const heightDiff = Math.abs(window.outerHeight - window.innerHeight) > threshold;
-        const open = widthDiff || heightDiff;
-        if (open && !devtoolsOpen) {
-          devtoolsOpen = true;
-          queueEvent("devtools_open");
-        }
-        if (!open && devtoolsOpen) {
+        const marker = new Image();
+        Object.defineProperty(marker, "id", {
+          get() {
+            if (!devtoolsOpen) {
+              devtoolsOpen = true;
+              queueEvent("devtools_open");
+            }
+            return "devtools-probe";
+          }
+        });
+        console.debug(marker);
+        setTimeout(() => {
           devtoolsOpen = false;
-        }
+        }, 1500);
       }, 1000);
 
       beginBtn.addEventListener("click", () => {
@@ -1404,9 +1444,8 @@ void main() {
         const saved = JSON.parse(localStorage.getItem("ambi_session") || "null");
         if (!saved) return;
         sessionToken = saved.sessionToken;
-        sessionKey = await deriveSessionKey(sessionToken);
         questionNumber = saved.questionNumber || 0;
-        maxQuestions = saved.maxQuestions || 10;
+        maxQuestions = saved.maxQuestions || CONFIG.maxQuestions;
         correctCount = saved.correctCount || 0;
         sessionStartedAt = saved.sessionStartedAt || Date.now();
         showScreen("test");
@@ -1456,6 +1495,7 @@ void main() {
           })
           .catch(() => {});
       }
+      // Select camera or motion tracking based on device capability.
       async function chooseTrackingMode() {
         let hasCamera = false;
         try {
@@ -1478,12 +1518,15 @@ void main() {
           return;
         }
         trackingAvailable = false;
-        statusText.textContent = "Motion or camera required";
+        calibrated = true;
+        angleDeg = 0;
+        statusText.textContent = "Camera unavailable";
         statusDot.className = "status-dot status-dot--bad";
       }
       chooseTrackingMode();
 
       setInterval(checkRecovery, 500);
+      // Keep answer choices and WebGL output synchronized with head angle.
       function animationLoop() {
         if (currentQuestionId) {
           syncAnswerOptionsToAngle();

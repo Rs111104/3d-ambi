@@ -5,6 +5,12 @@
   const leftInput = document.getElementById("decoyLeft");
   const rightInput = document.getElementById("decoyRight");
   const resetButton = document.getElementById("resetAngle");
+  const CONFIG = {
+    maxAngle: 45,
+    transition: 6,
+    validZone: 15,
+    maxQuestions: 10
+  };
 
   const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
   if (!gl) {
@@ -27,7 +33,7 @@
     uniform sampler2D u_center;
     uniform sampler2D u_left;
     uniform sampler2D u_right;
-    uniform float u_angle;
+    uniform float uAngle;
     uniform float u_maxAngle;
     uniform float u_transition;
 
@@ -36,9 +42,9 @@
       vec4 leftColor = texture2D(u_left, v_uv);
       vec4 rightColor = texture2D(u_right, v_uv);
 
-      float absAngle = abs(u_angle);
+      float absAngle = abs(uAngle);
       float t = smoothstep(u_transition, u_maxAngle, absAngle);
-      if (u_angle < 0.0) {
+      if (uAngle < 0.0) {
         gl_FragColor = mix(centerColor, leftColor, t);
       } else {
         gl_FragColor = mix(centerColor, rightColor, t);
@@ -95,7 +101,7 @@
   const uCenter = gl.getUniformLocation(program, "u_center");
   const uLeft = gl.getUniformLocation(program, "u_left");
   const uRight = gl.getUniformLocation(program, "u_right");
-  const uAngle = gl.getUniformLocation(program, "u_angle");
+  const uAngle = gl.getUniformLocation(program, "uAngle");
   const uMaxAngle = gl.getUniformLocation(program, "u_maxAngle");
   const uTransition = gl.getUniformLocation(program, "u_transition");
 
@@ -173,9 +179,6 @@
   rightInput.addEventListener("input", updateTextures);
 
   let angleDeg = 0;
-  const maxAngle = 45;
-  const transition = 6;
-
   function render() {
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0.05, 0.06, 0.08, 1.0);
@@ -188,9 +191,9 @@
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, rightTex);
 
-    gl.uniform1f(u_angle, angleDeg);
-    gl.uniform1f(u_maxAngle, maxAngle);
-    gl.uniform1f(u_transition, transition);
+    gl.uniform1f(uAngle, angleDeg);
+    gl.uniform1f(u_maxAngle, CONFIG.maxAngle);
+    gl.uniform1f(u_transition, CONFIG.transition);
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     angleReadout.textContent = `Angle: ${angleDeg.toFixed(1)} deg`;
@@ -200,7 +203,7 @@
     const rect = canvas.getBoundingClientRect();
     const norm = (clientX - rect.left) / rect.width;
     const clamped = Math.max(0, Math.min(1, norm));
-    angleDeg = (clamped * 2 - 1) * maxAngle;
+    angleDeg = (clamped * 2 - 1) * CONFIG.maxAngle;
     render();
   }
 
