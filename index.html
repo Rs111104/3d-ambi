@@ -1,0 +1,895 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Assessment Session</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #111827;
+      --good: #16a34a;
+      --bad: #dc2626;
+      --warn: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      min-height: 100vh;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #d1d5db;
+    }
+
+    .status-dot--good {
+      background: var(--good);
+    }
+
+    .status-dot--bad {
+      background: var(--bad);
+    }
+
+    .status-dot--warn {
+      background: var(--warn);
+    }
+
+    .screen {
+      display: none;
+      flex: 1 1 auto;
+      align-items: center;
+      justify-content: center;
+      min-height: 420px;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    .card {
+      width: min(520px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      background: #ffffff;
+    }
+
+    .card h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    label {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      font-size: 16px;
+    }
+
+    button {
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: none;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .canvas-wrap {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      background: #f9fafb;
+      user-select: none;
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 10px;
+      background: #ffffff;
+    }
+
+    .timer {
+      height: 8px;
+      background: #eef2f7;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .timer-bar {
+      height: 100%;
+      width: 100%;
+      background: #111827;
+      transition: width 0.1s linear;
+    }
+
+    .answers {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      user-select: none;
+    }
+
+    .answer-btn {
+      padding: 14px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      text-align: left;
+      font-size: 15px;
+      cursor: pointer;
+      transition: border-color 0.15s ease;
+    }
+
+    .answer-btn:hover {
+      border-color: var(--accent);
+    }
+
+    .test-layout {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    #inputVideo {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    @media (max-width: 720px) {
+      .answers {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="header">
+      <div class="title">Assessment Session</div>
+      <div class="status">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Initializing camera...</span>
+      </div>
+    </header>
+
+    <section id="screen-start" class="screen active">
+      <div class="card">
+        <h1>Candidate Check-In</h1>
+        <label for="candidateName">Name</label>
+        <input id="candidateName" type="text" placeholder="Your name" autocomplete="name" />
+        <button id="beginBtn">Begin</button>
+      </div>
+    </section>
+
+    <section id="screen-calibrate" class="screen">
+      <div class="card">
+        <h1>Calibration</h1>
+        <p>Look straight at the camera. Calibration completes in <span id="calibTimer">3</span> seconds.</p>
+        <div class="timer">
+          <div class="timer-bar" id="calibBar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-test" class="screen">
+      <div class="test-layout">
+        <div class="canvas-wrap">
+          <canvas id="glCanvas" width="960" height="540" aria-label="Angle dependent question renderer"></canvas>
+        </div>
+        <div class="timer">
+          <div class="timer-bar" id="timerBar"></div>
+        </div>
+        <div class="answers" id="answerButtons"></div>
+      </div>
+    </section>
+
+    <section id="screen-complete" class="screen">
+      <div class="card">
+        <h1>Test complete. Thank you.</h1>
+      </div>
+    </section>
+  </main>
+
+  <video id="inputVideo" playsinline muted></video>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+  <script>
+    (() => {
+      const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
+      const screens = {
+        start: document.getElementById("screen-start"),
+        calibrate: document.getElementById("screen-calibrate"),
+        test: document.getElementById("screen-test"),
+        complete: document.getElementById("screen-complete")
+      };
+
+      const statusDot = document.getElementById("statusDot");
+      const statusText = document.getElementById("statusText");
+      const candidateName = document.getElementById("candidateName");
+      const beginBtn = document.getElementById("beginBtn");
+      const calibTimer = document.getElementById("calibTimer");
+      const calibBar = document.getElementById("calibBar");
+      const timerBar = document.getElementById("timerBar");
+      const answerButtons = document.getElementById("answerButtons");
+
+      const canvas = document.getElementById("glCanvas");
+      const inputVideo = document.getElementById("inputVideo");
+
+      const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
+      if (!gl) {
+        statusText.textContent = "WebGL unavailable";
+        statusDot.classList.add("status-dot--bad");
+        return;
+      }
+
+      let sessionToken = "";
+      let sessionKey = null;
+      let currentQuestionId = null;
+      let currentOptions = [];
+      let questionStart = 0;
+      let timerId = null;
+      let questionNumber = 0;
+      const maxQuestions = 10;
+      let trackingAvailable = true;
+      let calibrationStart = 0;
+      let calibrated = false;
+      let calibrationSamples = [];
+      let baseline = 0;
+      let angleDeg = 0;
+      const maxAngle = 45;
+      const transition = 10;
+      const validZone = 12;
+
+      let lastYawTs = 0;
+      let inZoneMs = 0;
+      let totalMs = 0;
+      let lastInZone = true;
+
+      const vertexSource = "\n" +
+        "attribute vec2 a_position;\n" +
+        "varying vec2 v_uv;\n" +
+        "void main() {\n" +
+        "  v_uv = (a_position + 1.0) * 0.5;\n" +
+        "  gl_Position = vec4(a_position, 0.0, 1.0);\n" +
+        "}\n";
+
+      const fragmentSource = "\n" +
+        "precision mediump float;\n" +
+        "varying vec2 v_uv;\n" +
+        "uniform sampler2D u_center;\n" +
+        "uniform sampler2D u_left;\n" +
+        "uniform sampler2D u_right;\n" +
+        "uniform float u_angle;\n" +
+        "uniform float u_maxAngle;\n" +
+        "uniform float u_transition;\n" +
+        "void main() {\n" +
+        "  vec4 centerColor = texture2D(u_center, v_uv);\n" +
+        "  vec4 leftColor = texture2D(u_left, v_uv);\n" +
+        "  vec4 rightColor = texture2D(u_right, v_uv);\n" +
+        "  float absAngle = abs(u_angle);\n" +
+        "  float blend = smoothstep(u_transition, u_maxAngle, absAngle);\n" +
+        "  vec4 mixedColor = u_angle < 0.0 ? mix(centerColor, leftColor, blend) : mix(centerColor, rightColor, blend);\n" +
+        "  float fade = 1.0 - smoothstep(u_maxAngle - 8.0, u_maxAngle, absAngle);\n" +
+        "  gl_FragColor = vec4(mixedColor.rgb * fade, 1.0);\n" +
+        "}\n";
+
+      function createShader(type, source) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          const msg = gl.getShaderInfoLog(shader) || "Shader error";
+          gl.deleteShader(shader);
+          throw new Error(msg);
+        }
+        return shader;
+      }
+
+      function createProgram(vsSource, fsSource) {
+        const program = gl.createProgram();
+        const vs = createShader(gl.VERTEX_SHADER, vsSource);
+        const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+          const msg = gl.getProgramInfoLog(program) || "Program error";
+          gl.deleteProgram(program);
+          throw new Error(msg);
+        }
+        return program;
+      }
+
+      const program = createProgram(vertexSource, fragmentSource);
+      gl.useProgram(program);
+
+      const posBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([ -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1 ]),
+        gl.STATIC_DRAW
+      );
+
+      const posLoc = gl.getAttribLocation(program, "a_position");
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+      const centerTex = gl.createTexture();
+      const leftTex = gl.createTexture();
+      const rightTex = gl.createTexture();
+
+      const uCenter = gl.getUniformLocation(program, "u_center");
+      const uLeft = gl.getUniformLocation(program, "u_left");
+      const uRight = gl.getUniformLocation(program, "u_right");
+      const uAngle = gl.getUniformLocation(program, "u_angle");
+      const uMaxAngle = gl.getUniformLocation(program, "u_maxAngle");
+      const uTransition = gl.getUniformLocation(program, "u_transition");
+
+      gl.uniform1i(uCenter, 0);
+      gl.uniform1i(uLeft, 1);
+      gl.uniform1i(uRight, 2);
+
+      const textCanvas = document.createElement("canvas");
+      const textCtx = textCanvas.getContext("2d");
+      textCanvas.width = 1024;
+      textCanvas.height = 512;
+
+      function wrapText(text, maxChars) {
+        const words = text.split(/\s+/).filter(Boolean);
+        const lines = [];
+        let current = "";
+        for (const word of words) {
+          const next = current ? `${current} ${word}` : word;
+          if (next.length > maxChars) {
+            if (current) lines.push(current);
+            current = word;
+          } else {
+            current = next;
+          }
+        }
+        if (current) lines.push(current);
+        return lines;
+      }
+
+      function drawText(text) {
+        textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
+        textCtx.fillStyle = "#ffffff";
+        textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height);
+        textCtx.fillStyle = "#111827";
+        textCtx.font = "600 40px Arial";
+        textCtx.textAlign = "center";
+        textCtx.textBaseline = "middle";
+        const lines = wrapText(text, 34);
+        const lineHeight = 52;
+        const totalHeight = lines.length * lineHeight;
+        const startY = (textCanvas.height - totalHeight) / 2 + lineHeight / 2;
+        for (let i = 0; i < lines.length; i += 1) {
+          textCtx.fillText(lines[i], textCanvas.width / 2, startY + i * lineHeight);
+        }
+      }
+
+      function uploadTexture(texture, text) {
+        drawText(text);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textCanvas);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+
+      function resizeCanvas() {
+        const ratio = window.devicePixelRatio || 1;
+        const width = Math.floor(canvas.clientWidth * ratio);
+        const height = Math.floor(canvas.clientHeight * ratio);
+        if (canvas.width !== width || canvas.height !== height) {
+          canvas.width = width;
+          canvas.height = height;
+        }
+      }
+
+      function render() {
+        resizeCanvas();
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, centerTex);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, leftTex);
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, rightTex);
+
+        gl.uniform1f(u_angle, angleDeg);
+        gl.uniform1f(u_maxAngle, maxAngle);
+        gl.uniform1f(u_transition, transition);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+
+      function showScreen(name) {
+        Object.values(screens).forEach((screen) => screen.classList.remove("active"));
+        screens[name].classList.add("active");
+      }
+
+      function updateStatus() {
+        if (!trackingAvailable) {
+          statusDot.className = "status-dot status-dot--bad";
+          statusText.textContent = "Camera unavailable";
+          return;
+        }
+        if (!calibrated) {
+          statusDot.className = "status-dot status-dot--warn";
+          statusText.textContent = "Calibrating";
+          return;
+        }
+        const inZone = Math.abs(angleDeg) <= validZone;
+        statusDot.className = inZone ? "status-dot status-dot--good" : "status-dot status-dot--bad";
+        statusText.textContent = inZone ? "Head aligned" : "Out of zone";
+      }
+
+      function trackCompliance(now, inZone) {
+        if (!lastYawTs) {
+          lastYawTs = now;
+          lastInZone = inZone;
+          return;
+        }
+        const delta = now - lastYawTs;
+        totalMs += delta;
+        if (lastInZone) {
+          inZoneMs += delta;
+        }
+        lastYawTs = now;
+        lastInZone = inZone;
+      }
+
+      function onYaw(rawYaw) {
+        if (!calibrated) {
+          calibrationSamples.push(rawYaw);
+          if (performance.now() - calibrationStart >= 3000) {
+            finishCalibration();
+          }
+        }
+        angleDeg = Math.max(-maxAngle, Math.min(maxAngle, rawYaw - baseline));
+        const inZone = Math.abs(angleDeg) <= validZone;
+        trackCompliance(performance.now(), inZone);
+        updateStatus();
+        render();
+      }
+
+      async function initCamera() {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+          inputVideo.srcObject = stream;
+          await inputVideo.play();
+          setupFaceMesh();
+        } catch (err) {
+          trackingAvailable = false;
+          calibrated = false;
+          baseline = 0;
+          angleDeg = 0;
+          updateStatus();
+          render();
+          queueEvent("camera_unavailable");
+        }
+      }
+
+      function setupFaceMesh() {
+        const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
+        faceMesh.setOptions({
+          maxNumFaces: 1,
+          refineLandmarks: true,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
+        });
+
+        faceMesh.onResults((results) => {
+          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+            return;
+          }
+          const lm = results.multiFaceLandmarks[0];
+          const leftEye = lm[33];
+          const rightEye = lm[263];
+          const nose = lm[1];
+          const midX = (leftEye.x + rightEye.x) / 2;
+          const eyeDist = Math.max(0.0001, rightEye.x - leftEye.x);
+          const yawNorm = (nose.x - midX) / eyeDist;
+          const yawDeg = Math.max(-maxAngle, Math.min(maxAngle, yawNorm * 60));
+          onYaw(yawDeg);
+        });
+
+        const camera = new Camera(inputVideo, {
+          onFrame: async () => {
+            await faceMesh.send({ image: inputVideo });
+          },
+          width: 640,
+          height: 480
+        });
+
+        camera.start();
+      }
+
+      function startCalibration() {
+        calibrated = false;
+        calibrationSamples = [];
+        calibrationStart = performance.now();
+        showScreen("calibrate");
+        updateStatus();
+        const start = performance.now();
+        const duration = 3000;
+        const tick = () => {
+          const elapsed = performance.now() - start;
+          const remaining = Math.max(0, duration - elapsed);
+          calibTimer.textContent = Math.ceil(remaining / 1000).toString();
+          calibBar.style.width = `${(elapsed / duration) * 100}%`;
+          if (elapsed < duration && !calibrated) {
+            requestAnimationFrame(tick);
+          }
+        };
+        requestAnimationFrame(tick);
+        setTimeout(() => {
+          if (!calibrated) {
+            finishCalibration();
+          }
+        }, duration + 200);
+      }
+
+      function finishCalibration() {
+        if (calibrated) {
+          return;
+        }
+        const sum = calibrationSamples.reduce((a, b) => a + b, 0);
+        baseline = calibrationSamples.length ? sum / calibrationSamples.length : 0;
+        calibrated = true;
+        calibrationSamples = [];
+        showScreen("test");
+        startQuestion();
+      }
+
+      function resetComplianceTracking() {
+        lastYawTs = 0;
+        inZoneMs = 0;
+        totalMs = 0;
+        lastInZone = true;
+      }
+
+      async function fetchNextQuestion() {
+        const response = await fetch(`${API_BASE}/api/session/next`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionToken })
+        });
+        if (!response.ok) {
+          throw new Error("question_fetch_failed");
+        }
+        const data = await response.json();
+        if (!data.payload) {
+          throw new Error("invalid_payload");
+        }
+        return decryptPayload(data.payload);
+      }
+
+      function hexToBytes(hex) {
+        const out = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < out.length; i += 1) {
+          out[i] = parseInt(hex.substr(i * 2, 2), 16);
+        }
+        return out;
+      }
+
+      function base64ToBytes(base64) {
+        const bin = atob(base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i += 1) {
+          bytes[i] = bin.charCodeAt(i);
+        }
+        return bytes;
+      }
+
+      async function hmacSha256(keyBytes, dataBytes) {
+        const key = await crypto.subtle.importKey(
+          "raw",
+          keyBytes,
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+        const sig = await crypto.subtle.sign("HMAC", key, dataBytes);
+        return new Uint8Array(sig);
+      }
+
+      async function decryptPayload(payload) {
+        if (!sessionKey) {
+          throw new Error("missing_session_key");
+        }
+        const nonce = base64ToBytes(payload.nonce);
+        const ciphertext = base64ToBytes(payload.ciphertext);
+        const tag = base64ToBytes(payload.tag);
+        const check = await hmacSha256(sessionKey, concatBytes(nonce, ciphertext));
+        if (!timingSafeEqual(check, tag)) {
+          throw new Error("invalid_tag");
+        }
+        const plaintext = await xorDecrypt(sessionKey, nonce, ciphertext);
+        const text = new TextDecoder().decode(plaintext);
+        return JSON.parse(text);
+      }
+
+      function concatBytes(a, b) {
+        const out = new Uint8Array(a.length + b.length);
+        out.set(a, 0);
+        out.set(b, a.length);
+        return out;
+      }
+
+      function timingSafeEqual(a, b) {
+        if (a.length !== b.length) {
+          return false;
+        }
+        let diff = 0;
+        for (let i = 0; i < a.length; i += 1) {
+          diff |= a[i] ^ b[i];
+        }
+        return diff === 0;
+      }
+
+      async function xorDecrypt(keyBytes, nonce, ciphertext) {
+        const out = new Uint8Array(ciphertext.length);
+        let counter = 0;
+        let offset = 0;
+        while (offset < ciphertext.length) {
+          const counterBytes = new Uint8Array([0, 0, 0, 0]);
+          const view = new DataView(counterBytes.buffer);
+          view.setUint32(0, counter, false);
+          const block = await hmacSha256(keyBytes, concatBytes(nonce, counterBytes));
+          for (let i = 0; i < Math.min(32, ciphertext.length - offset); i += 1) {
+            out[offset + i] = ciphertext[offset + i] ^ block[i];
+          }
+          offset += 32;
+          counter += 1;
+        }
+        return out;
+      }
+
+      function setQuestionTextures(data) {
+        uploadTexture(centerTex, data.question);
+        uploadTexture(leftTex, data.decoyLeft.question);
+        uploadTexture(rightTex, data.decoyRight.question);
+        render();
+      }
+
+      function setAnswerButtons(options) {
+        answerButtons.innerHTML = "";
+        options.forEach((option, index) => {
+          const btn = document.createElement("button");
+          btn.className = "answer-btn";
+          btn.textContent = option;
+          btn.addEventListener("click", () => submitAnswer(index));
+          answerButtons.appendChild(btn);
+        });
+      }
+
+      function startTimer(seconds) {
+        clearInterval(timerId);
+        const start = performance.now();
+        const duration = seconds * 1000;
+        timerBar.style.width = "100%";
+        timerId = setInterval(() => {
+          const elapsed = performance.now() - start;
+          const remaining = Math.max(0, duration - elapsed);
+          timerBar.style.width = `${(remaining / duration) * 100}%`;
+          if (remaining <= 0) {
+            clearInterval(timerId);
+            submitAnswer(-1);
+          }
+        }, 100);
+      }
+
+      async function startQuestion() {
+        if (questionNumber >= maxQuestions) {
+          await completeSession();
+          return;
+        }
+        resetComplianceTracking();
+        try {
+          const data = await fetchNextQuestion();
+          currentQuestionId = data.questionId;
+          currentOptions = data.options;
+          setQuestionTextures(data);
+          setAnswerButtons(currentOptions);
+          questionStart = performance.now();
+          startTimer(data.timeLimit || 20);
+        } catch (err) {
+          queueEvent("question_fetch_failed");
+          setTimeout(() => startQuestion(), 1000);
+        }
+      }
+
+      async function submitAnswer(answerIndex) {
+        if (!currentQuestionId) {
+          return;
+        }
+        clearInterval(timerId);
+        const timeMs = Math.max(0, Math.round(performance.now() - questionStart));
+        const compliance = totalMs > 0 ? inZoneMs / totalMs : 1;
+        const payload = {
+          sessionToken,
+          questionId: currentQuestionId,
+          answerIndex,
+          timeMs,
+          headCompliance: compliance
+        };
+        currentQuestionId = null;
+        await fetch(`${API_BASE}/api/session/answer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        questionNumber += 1;
+        startQuestion();
+      }
+
+      async function startSession() {
+        const name = candidateName.value.trim() || "Candidate";
+        const res = await fetch(`${API_BASE}/api/session/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name })
+        });
+        const data = await res.json();
+        sessionToken = data.sessionToken || "";
+        sessionKey = data.sessionKey ? hexToBytes(data.sessionKey) : null;
+        questionNumber = 0;
+        flushEvents();
+        startCalibration();
+      }
+
+      async function completeSession() {
+        await fetch(`${API_BASE}/api/session/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionToken })
+        });
+        clearInterval(timerId);
+        showScreen("complete");
+      }
+
+      const pendingEvents = [];
+      function queueEvent(type, detail) {
+        const event = { type, detail };
+        if (!sessionToken) {
+          pendingEvents.push(event);
+          return;
+        }
+        fetch(`${API_BASE}/api/session/event`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionToken, type, detail })
+        });
+      }
+
+      function flushEvents() {
+        if (!sessionToken || pendingEvents.length === 0) {
+          return;
+        }
+        pendingEvents.splice(0).forEach((event) => queueEvent(event.type, event.detail));
+      }
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          queueEvent("tab_hidden");
+        }
+      });
+
+      window.addEventListener("blur", () => {
+        queueEvent("window_blur");
+      });
+
+      window.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        queueEvent("right_click");
+      });
+
+      let devtoolsOpen = false;
+      setInterval(() => {
+        const threshold = 160;
+        const widthDiff = Math.abs(window.outerWidth - window.innerWidth) > threshold;
+        const heightDiff = Math.abs(window.outerHeight - window.innerHeight) > threshold;
+        const open = widthDiff || heightDiff;
+        if (open && !devtoolsOpen) {
+          devtoolsOpen = true;
+          queueEvent("devtools_open");
+        }
+        if (!open && devtoolsOpen) {
+          devtoolsOpen = false;
+        }
+      }, 1000);
+
+      beginBtn.addEventListener("click", () => {
+        startSession();
+      });
+
+      updateStatus();
+      render();
+      initCamera();
+
+      window.addEventListener("beforeunload", () => {
+        if (sessionToken) {
+          navigator.sendBeacon(`${API_BASE}/api/session/event`, JSON.stringify({
+            sessionToken,
+            type: "session_end"
+          }));
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Dashboard</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #6b7280;
+      --border: #e5e7eb;
+      --accent: #0f172a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .brand {
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .nav-btn {
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .nav-btn.active {
+      border-color: var(--border);
+      background: #f3f4f6;
+    }
+
+    .content {
+      padding: 28px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .panel h2 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .table th,
+    .table td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    .table th {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: #f9fafb;
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    textarea {
+      min-height: 100px;
+      resize: vertical;
+    }
+
+    button {
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: none;
+      background: var(--accent);
+      color: #ffffff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .screen {
+      display: none;
+    }
+
+    .screen.active {
+      display: block;
+    }
+
+    .login {
+      max-width: 360px;
+      margin: 80px auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .layout {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        flex-direction: row;
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="loginScreen" class="login">
+    <h2>Admin Login</h2>
+    <label>Username</label>
+    <input id="loginUser" type="text" />
+    <label>Password</label>
+    <input id="loginPass" type="password" />
+    <button id="loginBtn">Sign in</button>
+    <div id="loginMsg" class="muted"></div>
+  </div>
+
+  <div id="dashboard" class="layout" style="display:none;">
+    <aside class="sidebar">
+      <div class="brand">Admin</div>
+      <button class="nav-btn active" data-screen="sessions">Sessions</button>
+      <button class="nav-btn" data-screen="questions">Questions</button>
+      <button class="nav-btn" data-screen="settings">Settings</button>
+    </aside>
+    <main class="content">
+      <section id="screen-sessions" class="screen active">
+        <div class="panel">
+          <h2>Sessions</h2>
+          <table class="table" id="sessionsTable">
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Start</th>
+                <th>Duration</th>
+                <th>Score</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel" id="sessionDetail" style="display:none;">
+          <h2>Session Detail</h2>
+          <div id="detailMeta" class="muted"></div>
+          <div class="row" style="margin-top:10px;">
+            <button id="markCleared">Mark cleared</button>
+            <button id="markEscalated">Mark escalated</button>
+            <div id="reviewMsg" class="muted"></div>
+          </div>
+          <h3>Answers</h3>
+          <table class="table" id="answersTable">
+            <thead>
+              <tr>
+                <th>Question</th>
+                <th>Answer</th>
+                <th>Correct</th>
+                <th>Time</th>
+                <th>Compliance</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <h3>Anomalies</h3>
+          <table class="table" id="eventsTable">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Detail</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="screen-questions" class="screen">
+        <div class="panel">
+          <h2>Questions</h2>
+          <table class="table" id="questionsTable">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Subject</th>
+                <th>Difficulty</th>
+                <th>Question</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="panel" id="questionDetail" style="display:none;">
+          <h2>Question Detail</h2>
+          <div id="questionDetailBody" class="muted"></div>
+        </div>
+        <div class="panel">
+          <h2>Add Question</h2>
+          <div class="grid grid-2">
+            <div>
+              <label>Subject</label>
+              <input id="qSubject" type="text" value="general" />
+            </div>
+            <div>
+              <label>Difficulty</label>
+              <input id="qDifficulty" type="text" value="medium" />
+            </div>
+          </div>
+          <label>Question</label>
+          <textarea id="qText"></textarea>
+          <label>Options (one per line)</label>
+          <textarea id="qOptions"></textarea>
+          <label>Correct option index (0-3)</label>
+          <input id="qCorrect" type="number" min="0" max="3" value="0" />
+          <button id="qSave">Save question</button>
+          <div id="qMsg" class="muted"></div>
+        </div>
+      </section>
+
+      <section id="screen-settings" class="screen">
+        <div class="panel">
+          <h2>Settings</h2>
+          <div class="grid grid-2">
+            <div>
+              <label>Time limit per question (seconds)</label>
+              <input id="setTime" type="number" min="10" max="120" />
+            </div>
+            <div>
+              <label>Passing threshold (0 to 1)</label>
+              <input id="setPassing" type="number" step="0.01" min="0" max="1" />
+            </div>
+            <div>
+              <label>Head compliance threshold (0 to 1)</label>
+              <input id="setCompliance" type="number" step="0.01" min="0" max="1" />
+            </div>
+            <div>
+              <label>Auto-flag events (comma separated)</label>
+              <input id="setEvents" type="text" />
+            </div>
+          </div>
+          <button id="saveSettings">Save settings</button>
+        </div>
+        <div class="panel">
+          <h2>Change Password</h2>
+          <label>Current password</label>
+          <input id="pwCurrent" type="password" />
+          <label>New password</label>
+          <input id="pwNew" type="password" />
+          <button id="pwSave">Update password</button>
+          <div id="pwMsg" class="muted"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
+      const loginScreen = document.getElementById("loginScreen");
+      const dashboard = document.getElementById("dashboard");
+      const loginBtn = document.getElementById("loginBtn");
+      const loginUser = document.getElementById("loginUser");
+      const loginPass = document.getElementById("loginPass");
+      const loginMsg = document.getElementById("loginMsg");
+
+      const navButtons = document.querySelectorAll(".nav-btn");
+      const screens = {
+        sessions: document.getElementById("screen-sessions"),
+        questions: document.getElementById("screen-questions"),
+        settings: document.getElementById("screen-settings")
+      };
+
+      const sessionsTable = document.getElementById("sessionsTable").querySelector("tbody");
+      const sessionDetail = document.getElementById("sessionDetail");
+      const detailMeta = document.getElementById("detailMeta");
+      const markCleared = document.getElementById("markCleared");
+      const markEscalated = document.getElementById("markEscalated");
+      const reviewMsg = document.getElementById("reviewMsg");
+      const answersTable = document.getElementById("answersTable").querySelector("tbody");
+      const eventsTable = document.getElementById("eventsTable").querySelector("tbody");
+      const questionsTable = document.getElementById("questionsTable").querySelector("tbody");
+      const questionDetail = document.getElementById("questionDetail");
+      const questionDetailBody = document.getElementById("questionDetailBody");
+
+      const qSubject = document.getElementById("qSubject");
+      const qDifficulty = document.getElementById("qDifficulty");
+      const qText = document.getElementById("qText");
+      const qOptions = document.getElementById("qOptions");
+      const qCorrect = document.getElementById("qCorrect");
+      const qSave = document.getElementById("qSave");
+      const qMsg = document.getElementById("qMsg");
+
+      const setTime = document.getElementById("setTime");
+      const setPassing = document.getElementById("setPassing");
+      const setCompliance = document.getElementById("setCompliance");
+      const setEvents = document.getElementById("setEvents");
+      const saveSettings = document.getElementById("saveSettings");
+
+      const pwCurrent = document.getElementById("pwCurrent");
+      const pwNew = document.getElementById("pwNew");
+      const pwSave = document.getElementById("pwSave");
+      const pwMsg = document.getElementById("pwMsg");
+
+      let adminToken = "";
+      let selectedSessionToken = "";
+
+      function authHeaders() {
+        return { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` };
+      }
+
+      function showScreen(name) {
+        Object.values(screens).forEach((screen) => screen.classList.remove("active"));
+        screens[name].classList.add("active");
+        navButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.screen === name));
+      }
+
+      navButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          showScreen(btn.dataset.screen);
+        });
+      });
+
+      async function login() {
+        loginMsg.textContent = "";
+        const res = await fetch(`${API_BASE}/api/admin/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: loginUser.value.trim(),
+            password: loginPass.value
+          })
+        });
+        if (!res.ok) {
+          loginMsg.textContent = "Login failed";
+          return;
+        }
+        const data = await res.json();
+        adminToken = data.token;
+        loginScreen.style.display = "none";
+        dashboard.style.display = "grid";
+        await refreshAll();
+      }
+
+      async function loadSessions() {
+        sessionsTable.innerHTML = "";
+        const res = await fetch(`${API_BASE}/api/admin/sessions`, { headers: authHeaders() });
+        const data = await res.json();
+        data.forEach((item) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${item.name}</td>
+            <td>${new Date(item.startedAt * 1000).toLocaleString()}</td>
+            <td>${Math.round(item.durationSec / 60)} min</td>
+            <td>${Math.round(item.score * 100)}%</td>
+            <td><span class="status-pill">${item.status}</span></td>
+          `;
+          row.addEventListener("click", () => loadSessionDetail(item.token, item.name));
+          sessionsTable.appendChild(row);
+        });
+      }
+
+      async function loadSessionDetail(token, name) {
+        selectedSessionToken = token;
+        reviewMsg.textContent = "";
+        const res = await fetch(`${API_BASE}/api/admin/session/${token}`, { headers: authHeaders() });
+        const data = await res.json();
+        sessionDetail.style.display = "block";
+        detailMeta.textContent = `Candidate: ${name}`;
+        answersTable.innerHTML = "";
+        data.answers.forEach((ans) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${ans.question}</td>
+            <td>${ans.answerIndex >= 0 ? ans.options[ans.answerIndex] : "No answer"}</td>
+            <td>${ans.correct ? "Yes" : "No"}</td>
+            <td>${Math.round(ans.timeMs / 1000)}s</td>
+            <td>${Math.round(ans.headCompliance * 100)}%</td>
+          `;
+          answersTable.appendChild(row);
+        });
+        eventsTable.innerHTML = "";
+        data.events.forEach((evt) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${evt.type}</td>
+            <td>${evt.detail || ""}</td>
+            <td>${new Date(evt.createdAt * 1000).toLocaleString()}</td>
+          `;
+          eventsTable.appendChild(row);
+        });
+      }
+
+      async function loadQuestions() {
+        questionsTable.innerHTML = "";
+        const res = await fetch(`${API_BASE}/api/admin/questions`, { headers: authHeaders() });
+        const data = await res.json();
+        data.forEach((q) => {
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td>${q.id}</td>
+            <td>${q.subject}</td>
+            <td>${q.difficulty}</td>
+            <td>${q.question}</td>
+          `;
+          row.addEventListener("click", () => {
+            questionDetail.style.display = "block";
+            questionDetailBody.innerHTML = `
+              <div><strong>Question:</strong> ${q.question}</div>
+              <div><strong>Options:</strong> ${q.options.join(" | ")}</div>
+              <div><strong>Correct:</strong> ${q.options[q.correctIndex] || ""}</div>
+              <div><strong>Decoy Left:</strong> ${q.decoyLeft.question}</div>
+              <div><strong>Decoy Left Options:</strong> ${q.decoyLeft.options.join(" | ")}</div>
+              <div><strong>Decoy Right:</strong> ${q.decoyRight.question}</div>
+              <div><strong>Decoy Right Options:</strong> ${q.decoyRight.options.join(" | ")}</div>
+            `;
+          });
+          questionsTable.appendChild(row);
+        });
+      }
+
+      async function saveQuestion() {
+        const options = qOptions.value.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (options.length !== 4) {
+          qMsg.textContent = "Provide exactly four options.";
+          return;
+        }
+        const payload = {
+          subject: qSubject.value.trim() || "general",
+          difficulty: qDifficulty.value.trim() || "medium",
+          question: qText.value.trim(),
+          options,
+          correctIndex: parseInt(qCorrect.value, 10)
+        };
+        const res = await fetch(`${API_BASE}/api/admin/question`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          qMsg.textContent = "Save failed";
+          return;
+        }
+        qMsg.textContent = "Saved";
+        qText.value = "";
+        qOptions.value = "";
+        await loadQuestions();
+      }
+
+      async function loadSettings() {
+        const res = await fetch(`${API_BASE}/api/admin/settings`, { headers: authHeaders() });
+        const data = await res.json();
+        setTime.value = data.timeLimit;
+        setPassing.value = data.passingThreshold;
+        setCompliance.value = data.headComplianceThreshold;
+        setEvents.value = data.autoFlagEvents.join(", ");
+      }
+
+      async function saveSettingsClick() {
+        const payload = {
+          timeLimit: parseInt(setTime.value, 10),
+          passingThreshold: parseFloat(setPassing.value),
+          headComplianceThreshold: parseFloat(setCompliance.value),
+          autoFlagEvents: setEvents.value.split(",").map((s) => s.trim()).filter(Boolean)
+        };
+        await fetch(`${API_BASE}/api/admin/settings`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(payload)
+        });
+      }
+
+      async function updatePassword() {
+        pwMsg.textContent = "";
+        const res = await fetch(`${API_BASE}/api/admin/password`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            currentPassword: pwCurrent.value,
+            newPassword: pwNew.value
+          })
+        });
+        if (!res.ok) {
+          pwMsg.textContent = "Update failed";
+          return;
+        }
+        pwMsg.textContent = "Updated";
+        pwCurrent.value = "";
+        pwNew.value = "";
+      }
+
+      async function refreshAll() {
+        await loadSessions();
+        await loadQuestions();
+        await loadSettings();
+      }
+
+      async function setReviewStatus(status) {
+        if (!selectedSessionToken) {
+          return;
+        }
+        const res = await fetch(`${API_BASE}/api/admin/session/review`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ token: selectedSessionToken, status })
+        });
+        if (!res.ok) {
+          reviewMsg.textContent = "Update failed";
+          return;
+        }
+        reviewMsg.textContent = "Updated";
+        await loadSessions();
+      }
+
+      loginBtn.addEventListener("click", login);
+      qSave.addEventListener("click", saveQuestion);
+      saveSettings.addEventListener("click", saveSettingsClick);
+      pwSave.addEventListener("click", updatePassword);
+      markCleared.addEventListener("click", () => setReviewStatus("cleared"));
+      markEscalated.addEventListener("click", () => setReviewStatus("escalated"));
+    })();
+  </script>
+</body>
+</html>
