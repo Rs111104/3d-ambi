@@ -69,3 +69,46 @@ Warning: set `ADMIN_USER` and `ADMIN_PASSWORD` before going live.
 ## Security Notes
 
 Question text is delivered as plain JSON over HTTPS and rendered into a canvas rather than normal page text. The system blocks embedding, rate-limits session endpoints, records suspicious behavior, and keeps webcam analysis on the candidate device. No video is uploaded. Review signals are stored as events so administrators can audit sessions after completion.
+
+## Self-Directed Excellence (process templates)
+
+We use a compact improvement and decision workflow to run biweekly experiments, capture decisions, and keep changes reversible.
+
+- Framework checklist: [SELF-DIRECTED-EXCELLENCE.md](SELF-DIRECTED-EXCELLENCE.md)
+- Two-week sprint template: [TWO-WEEK-IMPROVEMENT.md](TWO-WEEK-IMPROVEMENT.md)
+- Decision log & ADR: [DECISION-LOG-ADR.md](DECISION-LOG-ADR.md)
+- PR template: [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
+
+Create a new sprint file from the template:
+
+```bash
+python scripts/new_sprint.py --title "Sprint name"
+```
+
+Sprint files are stored under the `sprints/` folder.
+
+## Deployment
+
+The project includes a Dockerfile and a `docker-compose.yml` for local deployment, and a GitHub Actions workflow that builds and pushes a Docker image to GitHub Container Registry (GHCR).
+
+Local run with Docker Compose:
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+Build and run locally without Docker Compose:
+
+```bash
+docker build -t 3d-ambi:local .
+docker run -p 8080:8080 3d-ambi:local
+```
+
+CI: The workflow `.github/workflows/ci-build-push.yml` builds and pushes the image to `ghcr.io/<org>/3d-ambi:latest` on pushes to `main`. To enable pushing to GHCR, the workflow uses the `GITHUB_TOKEN` with `packages: write` permission.
+
+Optional: Deploy to Render
+
+- Create a Render web service and point it at the repository, or configure Render to pull your container image from GHCR.
+- To enable CI-triggered Render deployments, add a deploy step to the workflow and set `RENDER_API_KEY` and `RENDER_SERVICE_ID` as repository secrets.
+

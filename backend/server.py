@@ -1310,6 +1310,46 @@ class Handler(BaseHTTPRequestHandler):
             pass
         super().finish()
 
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        path = parsed.path
+        # Static pages: respond with headers only
+        if path == "/" or path == "/index.html" or path == "/test":
+            base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
+            full_path = os.path.join(base_dir, "index.html")
+            if not os.path.isfile(full_path):
+                self.send_response(404)
+                send_cors(self)
+                send_security_headers(self)
+                self.end_headers()
+                return
+            with open(full_path, "rb") as fh:
+                body = fh.read()
+            self.send_response(200)
+            send_cors(self)
+            send_security_headers(self)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return
+
+        # Health endpoint
+        if path == "/health":
+            try:
+                questions = fetch_question_count()
+                db_status = "connected"
+            except Exception:
+                questions = 0
+                db_status = "error"
+            payload = json.dumps({"status": "ok", "db": db_status, "questions": questions}).encode("utf-8")
+            self.send_response(200)
+            send_cors(self)
+            send_security_headers(self)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            return
+
     def do_OPTIONS(self):
         self.send_response(204)
         send_cors(self)
