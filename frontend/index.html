@@ -76,11 +76,11 @@
            <div class="check-item ok" style="justify-content: center;">✅ Securely Recorded</div>
         </div>
         <p class="mt-16">Your responses and proctoring data have been transmitted. You may now close this tab safely.</p>
+        <button class="btn mt-16" onclick="localStorage.clear(); location.reload()">Return Home</button>
       </div>
     </section>
   </main>
 
-  <!-- Hidden elements for tracking -->
   <video id="inputVideo" playsinline muted style="display:none"></video>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -88,14 +88,14 @@
   <script>
     /**
      * 3D Ambi Candidate Client
-     * High-integrity, angle-dependent assessment renderer.
+     * Engineered for resilience, security, and smooth UX.
      */
     (() => {
       const CONFIG = {
         API_BASE: location.origin,
         ANGLES: { MAX: 45, THRESHOLD: 12, BLEND: 8 },
-        TIMEOUTS: { CALIB: 3000, SESSION: 300000 },
-        TRACKING: { MIN_CONFIDENCE: 0.6, REFRESH_MS: 33 }
+        TIMEOUTS: { CALIB: 3000, IDLE: 300000 },
+        TRACKING: { MIN_CONFIDENCE: 0.6 }
       };
 
       const DOM = {
@@ -121,16 +121,22 @@
       };
 
       let state = {
-        token: null,
+        token: localStorage.getItem('ambi_token') || null,
         qId: null,
-        qIdx: 0,
+        qIdx: parseInt(localStorage.getItem('ambi_idx') || '0'),
         qTotal: 0,
         angle: 0,
-        baseline: 0,
-        startTime: 0,
+        baseline: parseFloat(localStorage.getItem('ambi_baseline') || '0'),
         locked: false,
+        startTime: 0,
         cameraActive: false,
         faceDetected: false
+      };
+
+      const save = () => {
+        if(state.token) localStorage.setItem('ambi_token', state.token);
+        localStorage.setItem('ambi_idx', state.qIdx);
+        localStorage.setItem('ambi_baseline', state.baseline);
       };
 
       // --- WebGL Engine ---
@@ -140,23 +146,21 @@
         precision highp float;
         varying vec2 v;
         uniform sampler2D c, l, r;
-        uniform float a, m, t; // angle, max, transition
+        uniform float a, m, t;
         void main() {
           float aa = abs(a);
-          float parallax = (a / 90.0) * 0.12;
+          float parallax = (a / 90.0) * 0.15;
           vec2 uv = clamp(v + vec2(parallax, 0.0), 0.0, 1.0);
           vec4 C = texture2D(c, v);
           vec4 L = texture2D(l, uv);
           vec4 R = texture2D(r, uv);
-          float b = smoothstep(t, t + 10.0, aa);
-          vec4 D = a < 0.0 ? L : R;
-          gl_FragColor = vec4(mix(C.rgb, D.rgb, b), 1.0);
+          float blend = smoothstep(t, t + 10.0, aa);
+          gl_FragColor = vec4(mix(C.rgb, (a < 0.0 ? L.rgb : R.rgb), blend), 1.0);
         }
       `;
 
       function createShader(type, src) {
         const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
         return s;
       }
       const prog = gl.createProgram();
@@ -175,13 +179,12 @@
       const offCanvas = document.createElement('canvas'); const ctx = offCanvas.getContext('2d');
       offCanvas.width = 1280; offCanvas.height = 720;
 
-      /** Renders text content to a WebGL texture */
       function uploadText(tex, text, idx) {
         ctx.fillStyle = '#fff'; ctx.fillRect(0,0,1280,720);
         ctx.fillStyle = '#0f172a'; ctx.font = 'bold 48px Inter, sans-serif';
-        const words = text.split(' '); let line = '', y = 180;
+        const words = text.split(' '); let line = '', y = 200;
         words.forEach(w => {
-          if (ctx.measureText(line + w).width > 1100) { ctx.fillText(line, 80, y); line = w + ' '; y += 70; }
+          if (ctx.measureText(line + w).width > 1100) { ctx.fillText(line, 80, y); line = w + ' '; y += 75; }
           else line += w + ' ';
         });
         ctx.fillText(line, 80, y);
@@ -190,14 +193,11 @@
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       }
 
-      // --- Crypto & Security ---
+      // --- Security ---
       async function deriveKey(tok) {
         const e = new TextEncoder();
         const base = await crypto.subtle.importKey('raw', e.encode(tok), 'HKDF', false, ['deriveKey']);
-        return await crypto.subtle.deriveKey(
-          { name: 'HKDF', salt: e.encode('3d-ambi-v1'), info: e.encode('session-key\x01'), hash: 'SHA-256' },
-          base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
-        );
+        return await crypto.subtle.deriveKey({ name: 'HKDF', salt: e.encode('3d-ambi-v1'), info: e.encode('session-key\x01'), hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
       }
 
       async function decrypt(data, key) {
@@ -214,39 +214,34 @@
         return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
       }
 
-      // --- Core Logic ---
-      async function fetchQuestion() {
-        const res = await fetch(`${CONFIG.API_BASE}/api/session/next`, {
-          method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token })
-        });
-        const data = await res.json();
-        const key = await deriveKey(state.token);
-        const q = await decrypt(data, key);
-        state.qId = q.questionId; state.qTotal = q.totalQuestions;
-        DOM.progress.textContent = `Question ${state.qIdx + 1} of ${state.qTotal}`;
-        uploadText(texs[0], q.question, 0);
-        uploadText(texs[1], q.decoyLeft.question, 1);
-        uploadText(texs[2], q.decoyRight.question, 2);
-        DOM.answers.innerHTML = '';
-        q.options.forEach((opt, i) => {
-          const b = document.createElement('button'); b.className = 'btn'; b.textContent = opt;
-          b.onclick = () => submitAnswer(i); DOM.answers.appendChild(b);
-        });
-        state.startTime = Date.now(); state.locked = false;
+      // --- Logic ---
+      async function fetchNext() {
+        try {
+          const res = await fetch('/api/session/next', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token })});
+          if(!res.ok) { if(res.status === 400) show('complete'); return; }
+          const d = await res.json();
+          const key = await deriveKey(state.token);
+          const q = await decrypt(d, key);
+          state.qId = q.questionId; state.qTotal = q.totalQuestions;
+          DOM.progress.textContent = `Question ${state.qIdx + 1} of ${state.qTotal}`;
+          uploadText(texs[0], q.question, 0); uploadText(texs[1], q.decoyLeft.question, 1); uploadText(texs[2], q.decoyRight.question, 2);
+          DOM.answers.innerHTML = '';
+          q.options.forEach((opt, i) => {
+            const b = document.createElement('button'); b.className = 'btn'; b.textContent = opt;
+            b.onclick = () => submit(i); DOM.answers.appendChild(b);
+          });
+          state.startTime = Date.now(); state.locked = false;
+        } catch(e) { console.error(e); setTimeout(fetchNext, 2000); }
       }
 
-      async function submitAnswer(idx) {
-        if (state.locked) return; state.locked = true;
+      async function submit(idx) {
+        if(state.locked) return; state.locked = true;
         const proof = await sign(state.qId, idx);
-        await fetch(`${CONFIG.API_BASE}/api/session/answer`, {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ sessionToken: state.token, questionId: state.qId, answerIndex: idx, timeMs: Date.now() - state.startTime, headCompliance: 1.0, proof })
-        });
-        state.qIdx++; 
-        if (state.qIdx >= state.qTotal) show('complete'); else fetchQuestion();
+        await fetch('/api/session/answer', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token, questionId: state.qId, answerIndex: idx, timeMs: Date.now() - state.startTime, headCompliance: 1.0, proof })});
+        state.qIdx++; save(); fetchNext();
       }
 
-      // --- Biometrics & Accessibility ---
+      // --- Tracking ---
       function setupTracking() {
         const fm = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
         fm.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6 });
@@ -267,7 +262,8 @@
         if (DOM.screens.start.classList.contains('active')) {
           const upd = (el, ok) => { el.querySelector('.icon').textContent = ok ? '✅' : '⭕'; el.classList.toggle('ok', ok); };
           upd(DOM.checklist.camera, state.cameraActive); upd(DOM.checklist.face, state.faceDetected); upd(DOM.checklist.light, true);
-          DOM.beginBtn.disabled = !(state.cameraActive && state.faceDetected && DOM.nameInput.value.trim());
+          DOM.beginBtn.disabled = !(state.cameraActive && state.faceDetected && (state.token || DOM.nameInput.value.trim()));
+          if(state.token) DOM.beginBtn.textContent = "Resume Assessment";
         }
         const ok = Math.abs(state.angle) <= CONFIG.ANGLES.THRESHOLD;
         DOM.statusDot.className = `status-dot ${ok ? 'status-dot--good' : 'status-dot--bad'}`;
@@ -277,19 +273,17 @@
       function show(s) { Object.values(DOM.screens).forEach(v => v.classList.remove('active')); DOM.screens[s].classList.add('active'); }
 
       DOM.beginBtn.onclick = async () => {
-        const res = await fetch(`${CONFIG.API_BASE}/api/session/start`, {
-          method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: DOM.nameInput.value })
-        });
-        const d = await res.json(); state.token = d.sessionToken;
-        show('calibrate'); setTimeout(() => { state.baseline = state.angle; show('test'); fetchQuestion(); }, CONFIG.TIMEOUTS.CALIB);
+        if (!state.token) {
+          const res = await fetch('/api/session/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: DOM.nameInput.value })});
+          const d = await res.json(); state.token = d.sessionToken; save();
+        }
+        show('calibrate'); setTimeout(() => { state.baseline = state.angle; save(); show('test'); fetchNext(); }, CONFIG.TIMEOUTS.CALIB);
       };
 
-      DOM.nameInput.oninput = updateUI;
+      window.addEventListener('blur', () => state.token && fetch('/api/session/event', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token, type: 'window_blur' }) }));
+      
       setupTracking();
-      (function loop() {
-        gl.uniform1f(unis.a, state.angle); gl.drawArrays(gl.TRIANGLES, 0, 6);
-        requestAnimationFrame(loop);
-      })();
+      (function loop() { gl.uniform1f(unis.a, state.angle); gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(loop); })();
     })();
   </script>
 </body>
