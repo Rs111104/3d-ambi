@@ -93,11 +93,20 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script>
+    window.onerror = function(msg, url, lineNo, columnNo, error) {
+      console.error('Global Error:', msg, 'at', url, lineNo, columnNo);
+      return false;
+    };
+    
     /**
      * 3D Ambi Candidate Client Engine
      * Optimized for zero-flicker recovery and cryptographic integrity.
      */
     (() => {
+      console.log('3D Ambi Engine initializing...');
+      if (typeof FaceMesh === 'undefined') console.error('FaceMesh not loaded!');
+      if (typeof Camera === 'undefined') console.error('Camera not loaded!');
+      
       const APP_CONFIG = {
         ANGLES: { LIMIT: 45, ZONE: 12 },
         CALIBRATION_MS: 3000,
@@ -223,6 +232,7 @@
         });
         const cam = new Camera(UI.video, { onFrame: async () => await fm.send({image: UI.video}), width: 1280, height: 720 });
         cam.start().then(() => { session.cameraLive = true; UI.checklist.cam.classList.add('ok'); UI.checklist.cam.querySelector('.icon').textContent='✅'; }).catch(() => document.getElementById('cameraDeniedMsg').classList.remove('is-hidden'));
+
       }
 
       function updateUI() {

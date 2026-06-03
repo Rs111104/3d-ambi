@@ -49,27 +49,30 @@ def create_session(candidate_name: str) -> str:
     
     with DB_LOCK:
         conn = db_connect()
-        # Fetch available questions to build a randomized order
-        question_rows = conn.execute("SELECT id FROM questions").fetchall()
-        if not question_rows:
-            # Handle empty bank gracefully
-            logger_instance = logging.getLogger("3D-Ambi")
-            logger_instance.warning("Session started with an empty question bank.")
-            question_ids = []
-        else:
-            question_ids = [int(row["id"]) for row in question_rows]
-            random.shuffle(question_ids)
-        
-        conn.execute(
-            "INSERT INTO sessions (token, session_key, question_order_json, created_at) VALUES (?, ?, ?, ?)",
-            (session_token, session_key_hex, json.dumps(question_ids), int(time.time()))
-        )
-        conn.execute(
-            "INSERT INTO session_meta (token, name, started_at) VALUES (?, ?, ?)",
-            (session_token, candidate_name, int(time.time()))
-        )
-        conn.commit()
-        conn.close()
+        try:
+            # Fetch available questions to build a randomized order
+            question_rows = conn.execute("SELECT id FROM questions").fetchall()
+            if not question_rows:
+                # Handle empty bank gracefully
+                import logging
+                logger_instance = logging.getLogger("3D-Ambi")
+                logger_instance.warning("Session started with an empty question bank.")
+                question_ids = []
+            else:
+                question_ids = [int(row["id"]) for row in question_rows]
+                random.shuffle(question_ids)
+            
+            conn.execute(
+                "INSERT INTO sessions (token, session_key, question_order_json, created_at) VALUES (?, ?, ?, ?)",
+                (session_token, session_key_hex, json.dumps(question_ids), int(time.time()))
+            )
+            conn.execute(
+                "INSERT INTO session_meta (token, name, started_at) VALUES (?, ?, ?)",
+                (session_token, candidate_name, int(time.time()))
+            )
+            conn.commit()
+        finally:
+            conn.close()
         
     return session_token
 
@@ -96,20 +99,27 @@ def record_answer(session_token: str, question_id: int, answer_index: int, time_
     # 2. Database Persistence
     with DB_LOCK:
         conn = db_connect()
-        # Evaluate correctness server-side
-        question_row = conn.execute("SELECT correct_index FROM questions WHERE id = ?", (question_id,)).fetchone()
-        is_correct = 1 if (question_row and int(question_row["correct_index"]) == int(answer_index)) else 0
-        
-        conn.execute(
-            """INSERT INTO session_answers 
-               (token, question_id, answer_index, correct, time_ms, head_compliance, created_at) 
-               VALUES (?,?,?,?,?,?,?)""",
-            (session_token, question_id, int(answer_index), is_correct, int(time_ms), float(head_compliance), int(time.time()))
-        )
-        # Advance the session index
-        conn.execute("UPDATE sessions SET answer_received = 1, next_index = next_index + 1 WHERE token = ?", (session_token,))
-        conn.commit()
-        conn.close()
+        try:
+            # Check for existing answer
+            existing = conn.execute("SELECT id FROM session_answers WHERE token=? AND question_id=?", (session_token, question_id)).fetchone()
+            if existing:
+                return True, "already_answered"
+
+            # Evaluate correctness server-side
+            question_row = conn.execute("SELECT correct_index FROM questions WHERE id = ?", (question_id,)).fetchone()
+            is_correct = 1 if (question_row and int(question_row["correct_index"]) == int(answer_index)) else 0
+            
+            conn.execute(
+                """INSERT INTO session_answers 
+                   (token, question_id, answer_index, correct, time_ms, head_compliance, created_at) 
+                   VALUES (?,?,?,?,?,?,?)""",
+                (session_token, question_id, int(answer_index), is_correct, int(time_ms), float(head_compliance), int(time.time()))
+            )
+            # Advance the session index
+            conn.execute("UPDATE sessions SET answer_received = 1, next_index = next_index + 1 WHERE token = ?", (session_token,))
+            conn.commit()
+        finally:
+            conn.close()
         
     return True, "ok"
 
@@ -120,19 +130,21 @@ def record_event(session_token: str, event_type: str, detail: str = None):
     """
     with DB_LOCK:
         conn = db_connect()
-        # Idempotency check: Ignore identical events from the same session within 2 seconds
-        duplicate = conn.execute(
-            "SELECT id FROM session_events WHERE token=? AND event_type=? AND created_at > ?", 
-            (session_token, event_type, int(time.time()) - 2)
-        ).fetchone()
-        
-        if not duplicate:
-            conn.execute(
-                "INSERT INTO session_events (token, event_type, detail, created_at) VALUES (?,?,?,?)", 
-                (session_token, event_type, detail, int(time.time()))
-            )
-            conn.commit()
-        conn.close()
+        try:
+            # Idempotency check: Ignore identical events from the same session within 2 seconds
+            duplicate = conn.execute(
+                "SELECT id FROM session_events WHERE token=? AND event_type=? AND created_at > ?", 
+                (session_token, event_type, int(time.time()) - 2)
+            ).fetchone()
+            
+            if not duplicate:
+                conn.execute(
+                    "INSERT INTO session_events (token, event_type, detail, created_at) VALUES (?,?,?,?)", 
+                    (session_token, event_type, detail, int(time.time()))
+                )
+                conn.commit()
+        finally:
+            conn.close()
     
     # Notify connected Admin SSE streams
     with EVENT_CONDITION:
@@ -150,6 +162,8 @@ def get_session(session_token: str) -> dict:
     """Safely retrieves current session state from persistence."""
     with DB_LOCK:
         conn = db_connect()
-        row = conn.execute("SELECT * FROM sessions WHERE token = ?", (session_token,)).fetchone()
-        conn.close()
-        return dict(row) if row else None
+        try:
+            row = conn.execute("SELECT * FROM sessions WHERE token = ?", (session_token,)).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
