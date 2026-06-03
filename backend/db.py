@@ -39,7 +39,7 @@ def init_db():
                     session_key TEXT,
                     next_index INTEGER DEFAULT 0,
                     question_order_json TEXT,
-                    answer_received INTEGER DEFAULT 1,
+                    answer_received INTEGER DEFAULT 0,
                     integrity_score INTEGER DEFAULT 100,
                     created_at INTEGER
                 );

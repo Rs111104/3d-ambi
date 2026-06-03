@@ -167,3 +167,13 @@ def get_session(session_token: str) -> dict:
             return dict(row) if row else None
         finally:
             conn.close()
+
+def complete_session(session_token: str):
+    """Marks a session as completed by setting the completed_at timestamp."""
+    with DB_LOCK:
+        conn = db_connect()
+        try:
+            conn.execute("UPDATE session_meta SET completed_at = ? WHERE token = ?", (int(time.time()), session_token))
+            conn.commit()
+        finally:
+            conn.close()

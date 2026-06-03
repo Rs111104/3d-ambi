@@ -83,10 +83,25 @@
         <div class="card">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
             <h2>Question Repository</h2>
-            <button id="addQuestion" class="btn" disabled>+ Add Content</button>
+            <button id="addQuestionBtn" class="btn">+ Add Content</button>
           </div>
+          
+          <div id="questionForm" class="card mt-16 is-hidden" style="background: var(--bg-primary);">
+            <h3>Create New Question</h3>
+            <div class="mt-10"><label>Subject</label><input id="formSubject" class="input" type="text" /></div>
+            <div class="mt-10"><label>Question Text</label><input id="formText" class="input" type="text" /></div>
+            <div class="mt-10"><label>Options (comma-separated)</label><input id="formOptions" class="input" type="text" /></div>
+            <div class="mt-10"><label>Correct Index (0-3)</label><input id="formCorrect" class="input" type="number" min="0" max="3" /></div>
+            <div class="mt-10"><label>Decoy Left</label><input id="formDecoyL" class="input" type="text" /></div>
+            <div class="mt-10"><label>Decoy Right</label><input id="formDecoyR" class="input" type="text" /></div>
+            <div class="mt-16">
+              <button id="submitQuestion" class="btn">Submit Question</button>
+              <button class="btn" style="background:var(--status-bad)" onclick="document.getElementById('questionForm').classList.add('is-hidden')">Cancel</button>
+            </div>
+          </div>
+
           <table class="table" id="questionsTable">
-            <thead><tr><th>ID</th><th>Category</th><th>Question Text</th><th>Validation</th><th>Actions</th></tr></thead>
+            <thead><tr><th>ID</th><th>Category</th><th>Question Text</th><th>Validation</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -243,13 +258,40 @@
         UI.sim.status.querySelector('.check-item').textContent = isAligned ? 'ALIGNED: Real Content Visible' : 'OUT OF ALIGNMENT: Decoy Active';
       };
 
-      // --- Event Listeners ---
-      document.getElementById(UI.login.btn).onclick = attemptLogin;
-      document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => showScreen(b.dataset.screen));
-      document.getElementById('exportCsv').onclick = () => window.location.href = `/api/admin/sessions/export?token=${authState.token}`;
+      // --- Question Management ---
+      document.getElementById('addQuestionBtn').onclick = () => document.getElementById('questionForm').classList.remove('is-hidden');
+      document.getElementById('submitQuestion').onclick = async () => {
+        const payload = {
+          subject: document.getElementById('formSubject').value,
+          question: document.getElementById('formText').value,
+          options: document.getElementById('formOptions').value.split(','),
+          correctIndex: parseInt(document.getElementById('formCorrect').value),
+          decoyLeft: document.getElementById('formDecoyL').value,
+          decoyRight: document.getElementById('formDecoyR').value
+        };
+        const res = await fetch('/api/admin/question', {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          document.getElementById('questionForm').classList.add('is-hidden');
+          // Refresh questions list
+          refreshQuestions();
+        }
+      };
       
-      // Auto-refresh sessions while in active oversight
-      setInterval(() => { if(!document.getElementById(UI.dash).classList.contains('is-hidden')) refreshSessions(); }, 15000);
+      async function refreshQuestions() {
+        const res = await fetch('/api/admin/questions', { headers: getHeaders() });
+        const questions = await res.json();
+        const tbody = document.getElementById('questionsTable').querySelector('tbody');
+        tbody.innerHTML = questions.map(q => `<tr><td>${q.id}</td><td>${q.subject}</td><td>${q.question_text}</td><td>${q.correct_index}</td></tr>`).join('');
+      }
+      
+      // Hook into nav click to refresh questions list
+      document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', (e) => {
+          if (e.target.dataset.screen === 'questions') refreshQuestions();
+      }));
     })();
   </script>
 </body>

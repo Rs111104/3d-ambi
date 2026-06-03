@@ -118,13 +118,40 @@ class AmbiRequestHandler(BaseHTTPRequestHandler):
             self.send_error(404)
         except Exception: logger.error(traceback.format_exc()); self.send_error(500)
 
+from collections import deque
+from datetime import datetime, timedelta
+
+# Simple in-memory rate limiter: {ip: deque([timestamps])}
+LOGIN_ATTEMPTS = {}
+
+    def is_rate_limited(self, ip: str) -> bool:
+        now = datetime.now()
+        window = timedelta(seconds=Config.AUTH_WINDOW_SEC)
+        
+        if ip not in LOGIN_ATTEMPTS:
+            LOGIN_ATTEMPTS[ip] = deque()
+            
+        # Remove old attempts
+        while LOGIN_ATTEMPTS[ip] and LOGIN_ATTEMPTS[ip][0] < now - window:
+            LOGIN_ATTEMPTS[ip].popleft()
+            
+        if len(LOGIN_ATTEMPTS[ip]) >= Config.AUTH_LIMIT:
+            return True
+        
+        LOGIN_ATTEMPTS[ip].append(now)
+        return False
+
     def do_POST(self):
         """Route state-modifying requests to auth or session controllers."""
         try:
             cl = int(self.headers.get('Content-Length', 0)); body = json.loads(self.rfile.read(cl).decode('utf-8')) if cl else {}
             path = urlparse(self.path).path
+            ip = self.client_address[0]
 
             if path == "/api/admin/login":
+                if self.is_rate_limited(ip):
+                    self.send_json(429, {"error": "Too many requests. Please try again later."})
+                    return
                 res = auth.authenticate_admin(body.get("username"), body.get("password"))
                 if res: self.send_json(200, {"token": res[0], "csrfToken": res[1]})
                 else: self.send_json(401, {"error": "Invalid credentials"})
@@ -152,9 +179,9 @@ class AmbiRequestHandler(BaseHTTPRequestHandler):
                 ok, msg = logic.record_answer(body.get("sessionToken"), body.get("questionId"), body.get("answerIndex"), body.get("timeMs"), body.get("headCompliance"), body.get("proof"))
                 self.send_json(200 if ok else 400, {"status": msg if ok else msg}); return
 
-            if path == "/api/session/event":
-                logic.record_event(body.get("sessionToken"), body.get("type"), body.get("detail"))
-                self.send_json(200, {"status": "recorded"}); return
+            if path == "/api/session/complete":
+                logic.complete_session(body.get("sessionToken"))
+                self.send_json(200, {"status": "ok"}); return
 
             # --- Administrative Command API ---
             if path.startswith("/api/admin/"):
