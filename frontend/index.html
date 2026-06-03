@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>3D Ambi | Secure Assessment</title>
+  <title>3D Ambi | Biometric Assessment</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,275 +15,236 @@
       <h1 class="title">3D Ambi Assessment</h1>
       <div class="status" aria-live="polite">
         <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Initialing...</span>
+        <span id="statusMessage">Checking environment...</span>
       </div>
     </header>
 
-    <!-- Step 1: Pre-flight Checklist -->
-    <section id="screen-start" class="screen active" aria-labelledby="start-title">
+    <!-- Phase 1: Environment Readiness -->
+    <section id="screen-start" class="screen active">
       <div class="card">
-        <h2 id="start-title">Ready to Begin?</h2>
-        <p>Ensure you are in a well-lit environment and facing the camera directly.</p>
+        <h2>Assessment Readiness</h2>
+        <p>This session uses real-time head-tracking to ensure test content visibility.</p>
         
-        <div class="checklist" id="preflightChecklist" role="list">
-          <div class="check-item" id="checkCamera" role="listitem"><span class="icon">⭕</span> Camera Access</div>
-          <div class="check-item" id="checkFace" role="listitem"><span class="icon">⭕</span> Face Detection</div>
-          <div class="check-item" id="checkLight" role="listitem"><span class="icon">⭕</span> Lighting Quality</div>
+        <div class="checklist" id="preflightChecklist">
+          <div class="check-item" id="checkCamera"><span class="icon">⭕</span> Camera Hardware</div>
+          <div class="check-item" id="checkFace"><span class="icon">⭕</span> Biometric Alignment</div>
+          <div class="check-item" id="checkSystem"><span class="icon">⭕</span> Engine Initialized</div>
         </div>
 
-        <video id="previewVideo" class="camera-preview" playsinline muted autoplay aria-label="Camera preview"></video>
-        
-        <div class="mt-16">
-          <label for="candidateName" class="label">Full Name</label>
-          <input id="candidateName" type="text" class="input" placeholder="Enter your name" autocomplete="name" />
+        <div id="cameraDeniedMsg" class="error-text is-hidden mb-12">
+          ❌ Camera access denied. Please enable your webcam and refresh the page to continue.
         </div>
-        <button id="beginBtn" class="btn mt-16" disabled>Unlock Assessment</button>
+
+        <video id="previewVideo" class="camera-preview" playsinline muted autoplay></video>
+        
+        <div class="mt-16" id="identityInput">
+          <label for="candidateName">Full Name</label>
+          <input id="candidateName" type="text" class="input" placeholder="Legal name required" />
+        </div>
+
+        <button id="beginBtn" class="btn mt-16" style="width:100%" disabled>Initialing...</button>
       </div>
     </section>
 
-    <!-- Step 2: Biometric Calibration -->
-    <section id="screen-calibrate" class="screen" aria-labelledby="calib-title">
+    <!-- Phase 2: Biometric Calibration -->
+    <section id="screen-calibrate" class="screen">
       <div class="card" style="text-align: center;">
-        <h2 id="calib-title">Calibrating...</h2>
-        <p>Hold still and look directly at the center of the screen.</p>
-        <div class="checklist mt-16">
-           <div class="check-item ok"><span id="calibTimer">3</span> seconds remaining</div>
+        <h2>Biometric Calibration</h2>
+        <p>Hold still and face the screen directly for baseline alignment.</p>
+        <div class="checklist mt-16" style="justify-content: center;">
+           <div class="check-item ok"><span id="calibTimer">3</span>s remaining</div>
         </div>
       </div>
     </section>
 
-    <!-- Step 3: Assessment Interface -->
+    <!-- Phase 3: Secure Assessment Engine -->
     <section id="screen-test" class="screen">
       <div style="width: 100%;">
-        <div class="header">
-          <div id="progressText" style="font-weight: 600;">Question 1 of 10</div>
-          <div id="timerText" style="font-family: monospace; font-weight: 700;">--:--</div>
+        <div style="display:flex; justify-content:space-between; margin-bottom:1rem; font-weight:600;">
+          <div id="progressCounter">Question -- of --</div>
+          <div id="sessionTimer">--:--</div>
         </div>
 
-        <div class="canvas-wrap" id="canvasContainer">
-          <canvas id="glCanvas" width="1280" height="720" aria-label="Secure Question Display"></canvas>
+        <div class="canvas-wrap">
+          <canvas id="secureCanvas" width="1280" height="720"></canvas>
         </div>
 
-        <div id="answerButtons" class="answers-grid" role="group" aria-label="Answer options"></div>
+        <div id="answerGrid" class="answers-grid"></div>
+        <div id="networkError" class="error-text mt-16 is-hidden">⚠️ Connection lost. Retrying...</div>
       </div>
     </section>
 
-    <!-- Step 4: Submission Confirmation -->
-    <section id="screen-complete" class="screen" aria-labelledby="complete-title">
+    <!-- Phase 4: Secure Submission -->
+    <section id="screen-complete" class="screen">
       <div class="card" style="text-align: center;">
-        <h2 id="complete-title">Assessment Submitted</h2>
-        <div class="checklist mt-16">
-           <div class="check-item ok" style="justify-content: center;">✅ Securely Recorded</div>
+        <h2>Submission Successful</h2>
+        <div class="checklist mt-16" style="justify-content: center;">
+           <div class="check-item ok">✅ Audit Log Finalized</div>
         </div>
-        <p class="mt-16">Your responses and proctoring data have been transmitted. You may now close this tab safely.</p>
-        <button class="btn mt-16" onclick="localStorage.clear(); location.reload()">Return Home</button>
+        <p class="mt-16">Your responses have been securely transmitted to the proctoring server. You may now close this tab.</p>
+        <button class="btn mt-16" onclick="localStorage.clear(); location.reload()">Finish</button>
       </div>
     </section>
   </main>
 
-  <video id="inputVideo" playsinline muted style="display:none"></video>
+  <!-- Background Processing -->
+  <video id="trackingVideo" playsinline muted style="display:none"></video>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script>
     /**
-     * 3D Ambi Candidate Client
-     * Engineered for resilience, security, and smooth UX.
+     * 3D Ambi Candidate Client Engine
+     * Optimized for zero-flicker recovery and cryptographic integrity.
      */
     (() => {
-      const CONFIG = {
-        API_BASE: location.origin,
-        ANGLES: { MAX: 45, THRESHOLD: 12, BLEND: 8 },
-        TIMEOUTS: { CALIB: 3000, IDLE: 300000 },
-        TRACKING: { MIN_CONFIDENCE: 0.6 }
+      const APP_CONFIG = {
+        ANGLES: { LIMIT: 45, ZONE: 12 },
+        CALIBRATION_MS: 3000,
+        RETRY_DELAY_MS: 2000
       };
 
-      const DOM = {
-        screens: {
-          start: document.getElementById('screen-start'),
-          calibrate: document.getElementById('screen-calibrate'),
-          test: document.getElementById('screen-test'),
-          complete: document.getElementById('screen-complete')
-        },
-        checklist: {
-          camera: document.getElementById('checkCamera'),
-          face: document.getElementById('checkFace'),
-          light: document.getElementById('checkLight')
-        },
-        beginBtn: document.getElementById('beginBtn'),
-        nameInput: document.getElementById('candidateName'),
-        canvas: document.getElementById('glCanvas'),
-        video: document.getElementById('inputVideo'),
-        statusDot: document.getElementById('statusDot'),
-        statusText: document.getElementById('statusText'),
-        progress: document.getElementById('progressText'),
-        answers: document.getElementById('answerButtons')
+      const UI = {
+        screens: { start: 'screen-start', calib: 'screen-calibrate', test: 'screen-test', done: 'screen-complete' },
+        checklist: { cam: document.getElementById('checkCamera'), face: document.getElementById('checkFace'), engine: document.getElementById('checkSystem') },
+        btn: document.getElementById('beginBtn'),
+        name: document.getElementById('candidateName'),
+        canvas: document.getElementById('secureCanvas'),
+        status: document.getElementById('statusMessage'),
+        dot: document.getElementById('statusDot'),
+        progress: document.getElementById('progressCounter'),
+        answers: document.getElementById('answerGrid'),
+        netError: document.getElementById('networkError'),
+        video: document.getElementById('trackingVideo')
       };
 
-      let state = {
-        token: localStorage.getItem('ambi_token') || null,
-        qId: null,
-        qIdx: parseInt(localStorage.getItem('ambi_idx') || '0'),
-        qTotal: 0,
-        angle: 0,
-        baseline: parseFloat(localStorage.getItem('ambi_baseline') || '0'),
-        locked: false,
-        startTime: 0,
-        cameraActive: false,
-        faceDetected: false
+      let session = {
+        token: localStorage.getItem('ambi_session_token'),
+        index: parseInt(localStorage.getItem('ambi_session_index') || '0'),
+        baseline: parseFloat(localStorage.getItem('ambi_session_baseline') || '0'),
+        currentAngle: 0,
+        activeQuestionId: null,
+        isLocked: false,
+        cameraLive: false,
+        engineReady: false
       };
 
-      const save = () => {
-        if(state.token) localStorage.setItem('ambi_token', state.token);
-        localStorage.setItem('ambi_idx', state.qIdx);
-        localStorage.setItem('ambi_baseline', state.baseline);
-      };
-
-      // --- WebGL Engine ---
-      const gl = DOM.canvas.getContext('webgl', { antialias: true, alpha: false });
-      const vertSrc = `attribute vec2 p; varying vec2 v; void main(){ v=p*0.5+0.5; gl_Position=vec4(p,0,1); }`;
-      const fragSrc = `
+      // --- Rendering Logic ---
+      const gl = UI.canvas.getContext('webgl', { antialias: true });
+      const vert = `attribute vec2 p; varying vec2 v; void main(){ v=p*0.5+0.5; gl_Position=vec4(p,0,1); }`;
+      const frag = `
         precision highp float;
         varying vec2 v;
         uniform sampler2D c, l, r;
-        uniform float a, m, t;
+        uniform float a, t;
         void main() {
           float aa = abs(a);
-          float parallax = (a / 90.0) * 0.15;
+          float parallax = (a / 90.0) * 0.18;
           vec2 uv = clamp(v + vec2(parallax, 0.0), 0.0, 1.0);
           vec4 C = texture2D(c, v);
-          vec4 L = texture2D(l, uv);
-          vec4 R = texture2D(r, uv);
-          float blend = smoothstep(t, t + 10.0, aa);
-          gl_FragColor = vec4(mix(C.rgb, (a < 0.0 ? L.rgb : R.rgb), blend), 1.0);
+          vec4 D = a < 0.0 ? texture2D(l, uv) : texture2D(r, uv);
+          gl_FragColor = vec4(mix(C.rgb, D.rgb, smoothstep(t, t+10.0, aa)), 1.0);
         }
       `;
 
-      function createShader(type, src) {
-        const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-        return s;
+      function initGL() {
+        const create = (type, src) => { const s=gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+        const p = gl.createProgram(); gl.attachShader(p, create(gl.VERTEX_SHADER, vert)); gl.attachShader(p, create(gl.FRAGMENT_SHADER, frag));
+        gl.linkProgram(p); gl.useProgram(p);
+        const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+        const l = gl.getAttribLocation(p, 'p'); gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 2, gl.FLOAT, false, 0, 0);
+        return { a: gl.getUniformLocation(p, 'a'), t: gl.getUniformLocation(p, 't'), texs: [gl.createTexture(), gl.createTexture(), gl.createTexture()] };
       }
-      const prog = gl.createProgram();
-      gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vertSrc));
-      gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fragSrc));
-      gl.linkProgram(prog); gl.useProgram(prog);
+      const unis = initGL(); gl.uniform1f(unis.t, APP_CONFIG.ANGLES.ZONE);
 
-      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
-      const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-      
-      const texs = [gl.createTexture(), gl.createTexture(), gl.createTexture()];
-      const unis = { a: gl.getUniformLocation(prog, 'a'), m: gl.getUniformLocation(prog, 'm'), t: gl.getUniformLocation(prog, 't') };
-      gl.uniform1f(unis.m, CONFIG.ANGLES.MAX); gl.uniform1f(unis.t, CONFIG.ANGLES.THRESHOLD);
-
-      const offCanvas = document.createElement('canvas'); const ctx = offCanvas.getContext('2d');
-      offCanvas.width = 1280; offCanvas.height = 720;
-
-      function uploadText(tex, text, idx) {
-        ctx.fillStyle = '#fff'; ctx.fillRect(0,0,1280,720);
-        ctx.fillStyle = '#0f172a'; ctx.font = 'bold 48px Inter, sans-serif';
-        const words = text.split(' '); let line = '', y = 200;
-        words.forEach(w => {
-          if (ctx.measureText(line + w).width > 1100) { ctx.fillText(line, 80, y); line = w + ' '; y += 75; }
-          else line += w + ' ';
-        });
-        ctx.fillText(line, 80, y);
-        gl.activeTexture(gl.TEXTURE0 + idx); gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offCanvas);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      const tCanvas = document.createElement('canvas'); const tCtx = tCanvas.getContext('2d'); tCanvas.width=1280; tCanvas.height=720;
+      function renderText(tex, txt, slot) {
+        tCtx.fillStyle='#fff'; tCtx.fillRect(0,0,1280,720); tCtx.fillStyle='#0f172a'; tCtx.font='bold 50px Inter, sans-serif';
+        let y=220; txt.split(' ').reduce((l,w)=>{ if(tCtx.measureText(l+w).width > 1100){ tCtx.fillText(l,80,y); y+=80; return w+' '; } return l+w+' '; }, '').split('\n').forEach(l=>tCtx.fillText(l,80,y));
+        gl.activeTexture(gl.TEXTURE0+slot); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,tCanvas);
+        gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
       }
 
-      // --- Security ---
-      async function deriveKey(tok) {
-        const e = new TextEncoder();
-        const base = await crypto.subtle.importKey('raw', e.encode(tok), 'HKDF', false, ['deriveKey']);
-        return await crypto.subtle.deriveKey({ name: 'HKDF', salt: e.encode('3d-ambi-v1'), info: e.encode('session-key\x01'), hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-      }
-
-      async function decrypt(data, key) {
-        const ct = new Uint8Array(data.encrypted.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-        const iv = new Uint8Array(data.nonce.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-        const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
-        return JSON.parse(new TextDecoder().decode(dec));
-      }
-
-      async function sign(idx, aIdx) {
-        const e = new TextEncoder();
-        const k = await crypto.subtle.importKey('raw', e.encode(state.token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-        const sig = await crypto.subtle.sign('HMAC', k, e.encode(idx.toString() + aIdx.toString()));
-        return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
-      }
-
-      // --- Logic ---
-      async function fetchNext() {
+      // --- API Service ---
+      async function request(path, body) {
+        UI.netError.classList.add('is-hidden');
         try {
-          const res = await fetch('/api/session/next', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token })});
-          if(!res.ok) { if(res.status === 400) show('complete'); return; }
-          const d = await res.json();
-          const key = await deriveKey(state.token);
-          const q = await decrypt(d, key);
-          state.qId = q.questionId; state.qTotal = q.totalQuestions;
-          DOM.progress.textContent = `Question ${state.qIdx + 1} of ${state.qTotal}`;
-          uploadText(texs[0], q.question, 0); uploadText(texs[1], q.decoyLeft.question, 1); uploadText(texs[2], q.decoyRight.question, 2);
-          DOM.answers.innerHTML = '';
-          q.options.forEach((opt, i) => {
-            const b = document.createElement('button'); b.className = 'btn'; b.textContent = opt;
-            b.onclick = () => submit(i); DOM.answers.appendChild(b);
-          });
-          state.startTime = Date.now(); state.locked = false;
-        } catch(e) { console.error(e); setTimeout(fetchNext, 2000); }
+          const r = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+          if(!r.ok) throw r; return await r.json();
+        } catch(e) {
+          UI.netError.classList.remove('is-hidden');
+          return new Promise(res => setTimeout(() => res(request(path, body)), APP_CONFIG.RETRY_DELAY_MS));
+        }
+      }
+
+      async function nextQuestion() {
+        const d = await request('/api/session/next', { sessionToken: session.token });
+        if(d.error === 'assessment_complete') { show('done'); return; }
+        
+        // Decrypt using Web Crypto
+        const e=new TextEncoder(); const base=await crypto.subtle.importKey('raw',e.encode(session.token),'HKDF',false,['deriveKey']);
+        const key=await crypto.subtle.deriveKey({name:'HKDF',salt:e.encode('3d-ambi-v1'),info:e.encode('session-key\x01'),hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['decrypt']);
+        const ct=new Uint8Array(d.ciphertext.match(/.{1,2}/g).map(b=>parseInt(b,16))), iv=new Uint8Array(d.nonce.match(/.{1,2}/g).map(b=>parseInt(b,16)));
+        const q = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv},key,ct)));
+
+        session.activeQuestionId = q.questionId;
+        UI.progress.textContent = `Question ${session.index + 1} of ${q.totalQuestions}`;
+        renderText(unis.texs[0], q.question, 0); renderText(unis.texs[1], q.decoyLeft.question, 1); renderText(unis.texs[2], q.decoyRight.question, 2);
+        UI.answers.innerHTML = '';
+        q.options.forEach((o, i) => { const b=document.createElement('button'); b.className='btn'; b.textContent=o; b.onclick=()=>submit(i); UI.answers.appendChild(b); });
+        session.isLocked = false;
       }
 
       async function submit(idx) {
-        if(state.locked) return; state.locked = true;
-        const proof = await sign(state.qId, idx);
-        await fetch('/api/session/answer', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token, questionId: state.qId, answerIndex: idx, timeMs: Date.now() - state.startTime, headCompliance: 1.0, proof })});
-        state.qIdx++; save(); fetchNext();
+        if(session.isLocked) return; session.isLocked = true;
+        const e=new TextEncoder(); const k=await crypto.subtle.importKey('raw',e.encode(session.token),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+        const proof = Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',k,e.encode(session.activeQuestionId.toString()+idx.toString())))).map(b=>b.toString(16).padStart(2,"0")).join("");
+        await request('/api/session/answer', { sessionToken: session.token, questionId: session.activeQuestionId, answerIndex: idx, timeMs: 0, headCompliance: 1.0, proof });
+        session.index++; localStorage.setItem('ambi_session_index', session.index); nextQuestion();
       }
 
-      // --- Tracking ---
-      function setupTracking() {
-        const fm = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+      // --- Biometrics ---
+      function initTracking() {
+        const fm = new FaceMesh({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
         fm.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6 });
         fm.onResults(res => {
-          state.faceDetected = res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0;
-          if (state.faceDetected) {
+          const detected = res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0;
+          if (detected) {
             const lm = res.multiFaceLandmarks[0];
             const yaw = (lm[1].x - (lm[33].x + lm[263].x)/2) / (lm[263].x - lm[33].x) * 50;
-            state.angle = Math.max(-45, Math.min(45, yaw - state.baseline));
+            session.currentAngle = Math.max(-45, Math.min(45, yaw - session.baseline));
           }
+          const ok = Math.abs(session.currentAngle) <= APP_CONFIG.ANGLES.ZONE;
+          UI.dot.className = `status-dot ${ok ? 'status-dot--good' : 'status-dot--bad'}`;
+          UI.status.textContent = ok ? 'Aligned' : 'Out of Alignment';
+          if (!session.engineReady) { session.engineReady = true; UI.checklist.engine.classList.add('ok'); UI.checklist.engine.querySelector('.icon').textContent='✅'; }
+          if (detected !== session.faceDetected) { session.faceDetected = detected; UI.checklist.face.classList.toggle('ok', detected); UI.checklist.face.querySelector('.icon').textContent=detected?'✅':'⭕'; }
           updateUI();
         });
-        const cam = new Camera(DOM.video, { onFrame: async () => { await fm.send({ image: DOM.video }); }, width: 1280, height: 720 });
-        cam.start().then(() => state.cameraActive = true);
+        const cam = new Camera(UI.video, { onFrame: async () => await fm.send({image: UI.video}), width: 1280, height: 720 });
+        cam.start().then(() => { session.cameraLive = true; UI.checklist.cam.classList.add('ok'); UI.checklist.cam.querySelector('.icon').textContent='✅'; }).catch(() => document.getElementById('cameraDeniedMsg').classList.remove('is-hidden'));
       }
 
       function updateUI() {
-        if (DOM.screens.start.classList.contains('active')) {
-          const upd = (el, ok) => { el.querySelector('.icon').textContent = ok ? '✅' : '⭕'; el.classList.toggle('ok', ok); };
-          upd(DOM.checklist.camera, state.cameraActive); upd(DOM.checklist.face, state.faceDetected); upd(DOM.checklist.light, true);
-          DOM.beginBtn.disabled = !(state.cameraActive && state.faceDetected && (state.token || DOM.nameInput.value.trim()));
-          if(state.token) DOM.beginBtn.textContent = "Resume Assessment";
+        if(document.getElementById('screen-start').classList.contains('active')) {
+          UI.btn.disabled = !(session.cameraLive && session.faceDetected && session.engineReady && (session.token || UI.name.value.trim()));
+          UI.btn.textContent = session.token ? 'Resume Session' : 'Begin Assessment';
         }
-        const ok = Math.abs(state.angle) <= CONFIG.ANGLES.THRESHOLD;
-        DOM.statusDot.className = `status-dot ${ok ? 'status-dot--good' : 'status-dot--bad'}`;
-        DOM.statusText.textContent = ok ? 'Aligned' : 'Out of Zone';
       }
 
-      function show(s) { Object.values(DOM.screens).forEach(v => v.classList.remove('active')); DOM.screens[s].classList.add('active'); }
+      function show(id) { Object.values(UI.screens).forEach(s => document.getElementById(s).classList.remove('active')); document.getElementById(UI.screens[id]).classList.add('active'); }
 
-      DOM.beginBtn.onclick = async () => {
-        if (!state.token) {
-          const res = await fetch('/api/session/start', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: DOM.nameInput.value })});
-          const d = await res.json(); state.token = d.sessionToken; save();
+      UI.btn.onclick = async () => {
+        if(!session.token) {
+          const d = await request('/api/session/start', { name: UI.name.value });
+          session.token = d.sessionToken; localStorage.setItem('ambi_session_token', session.token);
         }
-        show('calibrate'); setTimeout(() => { state.baseline = state.angle; save(); show('test'); fetchNext(); }, CONFIG.TIMEOUTS.CALIB);
+        show('calib'); 
+        setTimeout(() => { session.baseline = session.currentAngle + session.baseline; localStorage.setItem('ambi_session_baseline', session.baseline); show('test'); nextQuestion(); }, APP_CONFIG.CALIBRATION_MS);
       };
 
-      window.addEventListener('blur', () => state.token && fetch('/api/session/event', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token, type: 'window_blur' }) }));
-      
-      setupTracking();
-      (function loop() { gl.uniform1f(unis.a, state.angle); gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(loop); })();
+      initTracking();
+      (function loop() { gl.uniform1f(unis.a, session.currentAngle); gl.drawArrays(gl.TRIANGLES, 0, 6); requestAnimationFrame(loop); })();
     })();
   </script>
 </body>

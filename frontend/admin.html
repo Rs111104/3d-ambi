@@ -2,122 +2,132 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>3D Ambi | Admin Command Center</title>
+  <title>3D Ambi | Admin Intelligence</title>
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="admin-page">
-  <!-- Auth Screen -->
+  <!-- Authentication Layer -->
   <div id="loginScreen" class="screen active">
-    <div style="max-width: 400px; margin: 100px auto;">
+    <div style="max-width: 400px; margin: 120px auto;">
       <div class="card">
-        <h2>Proctor Login</h2>
+        <h2 style="margin-bottom:1.5rem">Proctor Authority</h2>
         <div class="mt-16">
-          <input id="loginUser" type="text" class="input" placeholder="Username" />
+          <label>Administrator Username</label>
+          <input id="loginUser" type="text" class="input" placeholder="e.g. admin" />
         </div>
         <div class="mt-16">
-          <input id="loginPass" type="password" class="input" placeholder="Password" />
+          <label>Security Password</label>
+          <input id="loginPass" type="password" class="input" placeholder="••••••••" />
         </div>
-        <button id="loginBtn" class="btn mt-16" style="width: 100%;">Access Dashboard</button>
-        <div id="loginMsg" class="error-text mt-16"></div>
+        <button id="loginBtn" class="btn mt-16" style="width: 100%;">Establish Secure Session</button>
+        <div id="loginMsg" class="error-text mt-16" style="text-align:center"></div>
       </div>
     </div>
   </div>
 
-  <!-- Main Dashboard -->
+  <!-- Management Interface -->
   <div id="dashboard" class="layout is-hidden">
     <aside class="sidebar">
-      <div class="brand" style="margin-bottom: 2rem;">3D Ambi Admin</div>
+      <div class="brand" style="margin-bottom: 2.5rem; font-size: 1.25rem; font-weight: 700;">3D Ambi Admin</div>
       <nav role="navigation">
-        <button class="nav-btn active" data-screen="sessions">Exam Sessions</button>
+        <button class="nav-btn active" data-screen="sessions">Active Sessions</button>
         <button class="nav-btn" data-screen="questions">Question Bank</button>
         <button class="nav-btn" data-screen="simulator">UI Simulator</button>
-        <button class="nav-btn" data-screen="settings">System Settings</button>
+        <button class="nav-btn" data-screen="settings">Global Config</button>
       </nav>
       <div style="margin-top: auto;">
-        <button class="btn" style="width: 100%; background: #ef4444;" onclick="location.reload()">Sign Out</button>
+        <button class="btn" style="width: 100%; background: var(--status-bad);" onclick="localStorage.clear(); location.reload()">Terminate Access</button>
       </div>
     </aside>
 
     <main class="content" role="main">
-      <!-- Sessions Table -->
+      <!-- Exam Sessions Monitor -->
       <section id="screen-sessions" class="screen active">
         <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h2>Recent Sessions</h2>
-            <button id="exportCsv" class="btn">Export CSV</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h2>Session Oversight</h2>
+            <button id="exportCsv" class="btn">Export Audit Log (CSV)</button>
           </div>
           <table class="table" id="sessionsTable">
             <thead>
               <tr>
-                <th style="cursor:pointer">Candidate ↕</th>
-                <th style="cursor:pointer">Time ↕</th>
+                <th>Candidate ↕</th>
+                <th>Start Time ↕</th>
                 <th>Duration</th>
-                <th>Score</th>
-                <th>Proctor Status</th>
+                <th>Academic Score</th>
+                <th>Integrity Status</th>
               </tr>
             </thead>
-            <tbody></tbody>
+            <tbody>
+              <!-- Data injected here -->
+            </tbody>
           </table>
         </div>
 
         <div id="replaySection" class="card mt-16 is-hidden">
-          <h2>Session Forensic Replay</h2>
-          <div id="replayTimeline" class="checklist mt-16" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); padding: 1rem;"></div>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+             <h2>Forensic Timeline: <span id="replayCandidate">--</span></h2>
+             <button class="btn" style="padding:4px 12px; font-size:0.75rem" onclick="document.getElementById('replaySection').classList.add('is-hidden')">Close</button>
+          </div>
+          <div id="replayTimeline" class="checklist mt-16" style="max-height: 350px; overflow-y: auto; border: 1px solid var(--border-color); padding: 1.25rem; background: var(--bg-primary);">
+             <!-- Events injected here -->
+          </div>
         </div>
       </section>
 
-      <!-- Question Bank -->
+      <!-- Content Management -->
       <section id="screen-questions" class="screen">
         <div class="card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-            <h2>Manage Questions</h2>
-            <button id="addQ" class="btn">+ New Question</button>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+            <h2>Question Repository</h2>
+            <button id="addQuestion" class="btn" disabled>+ Add Content</button>
           </div>
           <table class="table" id="questionsTable">
-            <thead><tr><th>ID</th><th>Subject</th><th>Question</th><th>Decoy Integrity</th><th>Actions</th></tr></thead>
+            <thead><tr><th>ID</th><th>Category</th><th>Question Text</th><th>Validation</th><th>Actions</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
       </section>
 
-      <!-- UI Simulator -->
+      <!-- Engine Simulation -->
       <section id="screen-simulator" class="screen">
         <div class="card">
-          <h2>Angle Rendering Simulator</h2>
-          <p>Test the cross-fade and parallax mechanics without a camera.</p>
+          <h2>Angle Logic Simulator</h2>
+          <p class="mt-10">Test the WebGL cross-fade and parallax layers manually.</p>
           
           <div id="simStatus" class="checklist mt-16">
-             <div class="check-item ok" style="background: var(--status-good); color: #fff; padding: 10px; border-radius: 8px;">ALIGNED: Real Content Visible</div>
+             <div class="check-item ok" style="background: var(--status-good); color: #fff; padding: 12px; border-radius: var(--radius-md); font-weight:700;">ALIGNED: Real Content Visible</div>
           </div>
 
-          <div class="canvas-wrap" style="background: #fff; border: 4px solid var(--border-color); position: relative; height: 300px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: #0f172a;">
-            <div id="simReal">How many moons does Mars have?</div>
-            <div id="simDecoy" style="position: absolute; opacity: 0; color: #64748b;">What is the capital of Japan?</div>
+          <div class="canvas-wrap" style="background: #fff; border: 4px solid var(--border-color); position: relative; height: 350px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; color: #0f172a; text-align:center; padding: 2rem;">
+            <div id="simReal">Which architectural pattern decouples storage from logic?</div>
+            <div id="simDecoy" style="position: absolute; opacity: 0; color: #64748b;">What is the primary color of a fire truck?</div>
           </div>
 
           <div class="mt-16">
-            <label>Simulate Head Angle (-45° to 45°)</label>
-            <input type="range" id="simAngle" class="input" min="-45" max="45" value="0" style="margin-top: 10px;" />
+            <label style="font-weight:600">Simulate Biometric Yaw (-45° to 45°)</label>
+            <input type="range" id="simAngle" class="input" min="-45" max="45" value="0" style="margin-top: 12px;" />
           </div>
         </div>
       </section>
 
-      <!-- Settings -->
+      <!-- Global Settings -->
       <section id="screen-settings" class="screen">
         <div class="card">
-          <h2>System Configuration</h2>
+          <h2>System Intelligence Config</h2>
           <div class="mt-16">
             <label>Inactivity Timeout (seconds)</label>
             <input type="number" id="cfgTimeout" class="input" value="300" />
+            <p class="mt-10" style="font-size:0.75rem; color:var(--text-secondary)">Sessions exceeding this limit without interaction are automatically flagged.</p>
           </div>
           <div class="mt-16">
-            <label>Integrity Threshold (PASS/WARN)</label>
+            <label>Integrity Warning Threshold (%)</label>
             <input type="number" id="cfgThreshold" class="input" value="80" />
           </div>
-          <button id="saveCfg" class="btn mt-16">Apply Settings</button>
+          <button id="saveCfg" class="btn mt-16">Commit System Changes</button>
         </div>
       </section>
     </main>
@@ -125,99 +135,121 @@
 
   <script>
     /**
-     * 3D Ambi Admin Dashboard
-     * Proactive proctoring and content management.
+     * 3D Ambi Administrative Control Suite
+     * Professional proctoring and behavioral auditing interface.
      */
     (() => {
-      let state = { token: "", csrf: "", sessions: [], questions: [] };
+      let authState = { token: "", csrf: "", sessions: [] };
 
-      const DOM = {
-        login: { screen: document.getElementById('loginScreen'), user: document.getElementById('loginUser'), pass: document.getElementById('loginPass'), btn: document.getElementById('loginBtn'), msg: document.getElementById('loginMsg') },
-        dash: document.getElementById('dashboard'),
-        nav: document.querySelectorAll('.nav-btn'),
-        screens: { sessions: document.getElementById('screen-sessions'), questions: document.getElementById('screen-questions'), simulator: document.getElementById('screen-simulator'), settings: document.getElementById('screen-settings') },
-        sessionTable: document.getElementById('sessionsTable').querySelector('tbody'),
-        replay: { section: document.getElementById('replaySection'), timeline: document.getElementById('replayTimeline') },
+      const UI = {
+        login: { screen: 'loginScreen', user: 'loginUser', pass: 'loginPass', btn: 'loginBtn', msg: 'loginMsg' },
+        dash: 'dashboard',
+        screens: ['sessions', 'questions', 'simulator', 'settings'],
+        table: document.getElementById('sessionsTable').querySelector('tbody'),
+        replay: { section: 'replaySection', name: 'replayCandidate', log: 'replayTimeline' },
         sim: { angle: document.getElementById('simAngle'), real: document.getElementById('simReal'), decoy: document.getElementById('simDecoy'), status: document.getElementById('simStatus') }
       };
 
-      // --- Utilities ---
-      const headers = () => ({ "Content-Type": "application/json", "Authorization": `Bearer ${state.token}`, "X-CSRF-Token": state.csrf });
-      
+      // --- Core Services ---
+      const getHeaders = () => ({ "Content-Type": "application/json", "Authorization": `Bearer ${authState.token}`, "X-CSRF-Token": authState.csrf });
+
       function showScreen(name) {
-        Object.values(DOM.screens).forEach(s => s.classList.remove('active'));
-        DOM.nav.forEach(b => b.classList.toggle('active', b.dataset.screen === name));
-        DOM.screens[name].classList.add('active');
-        if (name === 'sessions') loadSessions();
-        if (name === 'questions') loadQuestions();
+        UI.screens.forEach(s => document.getElementById(`screen-${s}`).classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+        document.getElementById(`screen-${name}`).classList.add('active');
+        if (name === 'sessions') refreshSessions();
       }
 
-      // --- Actions ---
-      async function login() {
+      async function attemptLogin() {
+        const user = document.getElementById(UI.login.user).value;
+        const pass = document.getElementById(UI.login.pass).value;
         const res = await fetch('/api/admin/login', {
           method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ username: DOM.login.user.value, password: DOM.login.pass.value })
+          body: JSON.stringify({ username: user, password: pass })
         });
-        if (!res.ok) { DOM.login.msg.textContent = "Invalid credentials"; return; }
-        const d = await res.json();
-        state.token = d.token; state.csrf = d.csrfToken;
-        DOM.login.screen.classList.remove('active'); DOM.dash.classList.remove('is-hidden');
-        loadSessions();
+        
+        if (!res.ok) { document.getElementById(UI.login.msg).textContent = "Invalid administrator credentials"; return; }
+        const data = await res.json();
+        authState.token = data.token; authState.csrf = data.csrfToken;
+        document.getElementById(UI.login.screen).classList.remove('active');
+        document.getElementById(UI.dash).classList.remove('is-hidden');
+        refreshSessions();
       }
 
-      async function loadSessions() {
-        const res = await fetch('/api/admin/sessions', { headers: headers() });
-        state.sessions = await res.json();
-        renderSessions();
+      async function refreshSessions() {
+        try {
+          const res = await fetch('/api/admin/sessions', { headers: getHeaders() });
+          authState.sessions = await res.json();
+          renderSessions();
+        } catch(e) { console.error("Session sync failed", e); }
       }
 
       function renderSessions() {
-        DOM.sessionTable.innerHTML = '';
-        state.sessions.forEach(s => {
-          const r = document.createElement('tr');
-          const badge = s.integrity_score >= 80 ? 'pass' : (s.integrity_score >= 50 ? 'warn' : 'review');
-          r.innerHTML = `<td>${s.name}</td><td>${new Date(s.started_at*1000).toLocaleTimeString()}</td><td>${Math.round(s.durationSec/60)}m</td><td>${Math.round((s.score||0)*100)}%</td><td><span class="badge ${badge}">${badge.toUpperCase()}</span></td>`;
-          r.onclick = () => loadReplay(s.token);
-          DOM.sessionTable.appendChild(r);
+        UI.table.innerHTML = '';
+        if (authState.sessions.length === 0) {
+          UI.table.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:3rem; color:var(--text-secondary)">No assessment sessions recorded yet.</td></tr>';
+          return;
+        }
+        
+        authState.sessions.forEach(session => {
+          const row = document.createElement('tr');
+          row.style.cursor = 'pointer';
+          const integrity = session.integrity_score || 0;
+          const statusClass = integrity >= 80 ? 'pass' : (integrity >= 50 ? 'warn' : 'review');
+          
+          row.innerHTML = `
+            <td style="font-weight:600">${session.name}</td>
+            <td>${new Date(session.started_at*1000).toLocaleString()}</td>
+            <td>${Math.round(session.durationSec / 60)}m</td>
+            <td>${Math.round((session.score || 0)*100)}%</td>
+            <td><span class="badge ${statusClass}">${statusClass.toUpperCase()} (${integrity})</span></td>
+          `;
+          row.onclick = () => loadForensicAudit(session.token, session.name);
+          UI.table.appendChild(row);
         });
       }
 
-      async function loadReplay(token) {
-        const res = await fetch(`/api/admin/session/${token}`, { headers: headers() });
-        const d = await res.json();
-        DOM.replay.section.classList.remove('is-hidden');
-        DOM.replay.timeline.innerHTML = d.events.map(e => `
-          <div class="check-item ${e.type === 'inactivity_timeout' ? 'error-text' : ''}">
-            <b>${new Date(e.created_at*1000).toLocaleTimeString()}</b> — ${e.type}: ${e.detail || ''}
-          </div>
-        `).join('');
+      async function loadForensicAudit(token, name) {
+        const res = await fetch(`/api/admin/session/${token}`, { headers: getHeaders() });
+        const auditData = await res.json();
+        document.getElementById(UI.replay.section).classList.remove('is-hidden');
+        document.getElementById(UI.replay.name).textContent = name;
+        
+        document.getElementById(UI.replay.log).innerHTML = auditData.events.length > 0 
+          ? auditData.events.map(event => `
+              <div class="check-item ${event.type === 'tamper_detected' ? 'error-text' : ''}">
+                <span style="font-family:monospace; font-size:0.75rem">[${new Date(event.created_at*1000).toLocaleTimeString()}]</span>
+                <b style="min-width:140px; display:inline-block">${event.type.toUpperCase()}</b>
+                <span>${event.detail || 'No additional metadata'}</span>
+              </div>
+            `).join('')
+          : '<div style="text-align:center; padding:1rem; color:var(--text-secondary)">No behavioral anomalies detected during this session.</div>';
+          
+        document.getElementById(UI.replay.section).scrollIntoView({ behavior: 'smooth' });
       }
 
-      async function loadQuestions() {
-        const res = await fetch('/api/admin/questions', { headers: headers() });
-        state.questions = await res.json();
-        const tbody = document.getElementById('questionsTable').querySelector('tbody');
-        tbody.innerHTML = state.questions.map(q => `
-          <tr><td>${q.id}</td><td>${q.subject}</td><td>${q.question.slice(0,50)}...</td><td>✅ High</td><td><button class="nav-btn" style="color:var(--accent-color)">Edit</button></td></tr>
-        `).join('');
-      }
-
-      // --- Simulator Engine ---
-      DOM.sim.angle.oninput = (e) => {
-        const a = Math.abs(e.target.value);
-        const b = Math.min(1, Math.max(0, (a - 12) / 10));
-        DOM.sim.real.style.opacity = 1 - b;
-        DOM.sim.decoy.style.opacity = b;
-        DOM.sim.decoy.style.transform = `translateX(${e.target.value * 0.5}px)`;
-        const ok = a <= 15;
-        DOM.sim.status.querySelector('.check-item').style.background = ok ? 'var(--status-good)' : 'var(--status-bad)';
-        DOM.sim.status.querySelector('.check-item').textContent = ok ? 'ALIGNED: Real Content Visible' : 'OUT OF ZONE: Decoy Active';
+      // --- Simulation Engine ---
+      UI.sim.angle.oninput = (e) => {
+        const val = parseInt(e.target.value);
+        const absVal = Math.abs(val);
+        const opacity = Math.min(1, Math.max(0, (absVal - 12) / 10));
+        
+        UI.sim.real.style.opacity = 1 - opacity;
+        UI.sim.decoy.style.opacity = opacity;
+        UI.sim.decoy.style.transform = `translateX(${val * 0.8}px)`;
+        
+        const isAligned = absVal <= 15;
+        UI.sim.status.querySelector('.check-item').style.background = isAligned ? 'var(--status-good)' : 'var(--status-bad)';
+        UI.sim.status.querySelector('.check-item').textContent = isAligned ? 'ALIGNED: Real Content Visible' : 'OUT OF ALIGNMENT: Decoy Active';
       };
 
       // --- Event Listeners ---
-      DOM.login.btn.onclick = login;
-      DOM.nav.forEach(b => b.onclick = () => showScreen(b.dataset.screen));
-      document.getElementById('exportCsv').onclick = () => window.location.href = `/api/admin/sessions/export?token=${state.token}`;
+      document.getElementById(UI.login.btn).onclick = attemptLogin;
+      document.querySelectorAll('.nav-btn').forEach(b => b.onclick = () => showScreen(b.dataset.screen));
+      document.getElementById('exportCsv').onclick = () => window.location.href = `/api/admin/sessions/export?token=${authState.token}`;
+      
+      // Auto-refresh sessions while in active oversight
+      setInterval(() => { if(!document.getElementById(UI.dash).classList.contains('is-hidden')) refreshSessions(); }, 15000);
     })();
   </script>
 </body>
