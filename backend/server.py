@@ -6,295 +6,305 @@ import socket
 import threading
 import time
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.request import Request, urlopen
-import hashlib
-import hmac
-import secrets
-from urllib.parse import urlparse
-
-try:
-    from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-except Exception:
-    pass
-
-
-DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
-HOST = os.environ.get("HOST", "127.0.0.1")
-PORT = int(os.environ.get("PORT", "8080"))
-LLM_API_KEY = os.environ.get("LLM_API_KEY", "").strip()
-LLM_API_URL = os.environ.get("LLM_API_URL", "https://api.openai.com/v1/chat/completions")
-LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4o-mini")
-ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123!")
-SESSION_SECRET = os.environ.get(
-    "SECRET_KEY",
-    os.environ.get("SESSION_SECRET", "local-development-session-secret-change-before-deployment")
-)
-
-SEED_QUESTIONS = [
-    {
-        "subject": "numerical",
-        "difficulty": "medium",
-        "question": "A factory produces 240 units in 6 hours. At the same rate, how many units in 9 hours?",
-        "options": ["300", "320", "360", "400"],
-        "correct": 2
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "easy",
-        "question": "If 3 workers finish a job in 12 days, how many days for 4 workers at the same rate?",
-        "options": ["8", "9", "10", "12"],
-        "correct": 1
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "medium",
-        "question": "A car travels 150 km in 2.5 hours. What is its average speed?",
-        "options": ["50 km/h", "55 km/h", "60 km/h", "65 km/h"],
-        "correct": 2
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "medium",
-        "question": "A tank is 3/5 full. After adding 24 liters, it is 4/5 full. What is the tank capacity?",
-        "options": ["60 L", "90 L", "120 L", "150 L"],
-        "correct": 2
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "easy",
-        "question": "If a price is reduced by 20% to $80, what was the original price?",
-        "options": ["$90", "$95", "$100", "$120"],
-        "correct": 2
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "hard",
-        "question": "A train covers 300 km at 60 km/h and returns at 75 km/h. What is the average speed for the round trip?",
-        "options": ["66.7 km/h", "67.5 km/h", "68.6 km/h", "70 km/h"],
-        "correct": 0
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "medium",
-        "question": "If x + y = 20 and x - y = 4, what is the value of x?",
-        "options": ["8", "10", "12", "14"],
-        "correct": 2
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "medium",
-        "question": "An item marked $500 is sold at a 15% discount. What is the sale price?",
-        "options": ["$425", "$435", "$450", "$475"],
-        "correct": 2
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "medium",
-        "question": "If 5 machines make 200 parts in 8 hours, how many parts can 3 machines make in 10 hours?",
-        "options": ["120", "150", "160", "180"],
-        "correct": 1
-    },
-    {
-        "subject": "numerical",
-        "difficulty": "easy",
-        "question": "A person saves 25% of a $2,000 salary. How much is saved?",
-        "options": ["$400", "$450", "$500", "$550"],
-        "correct": 2
-    },
-    {
-        "subject": "logic",
-        "difficulty": "medium",
-        "question": "All managers are trained. Some trained staff are remote. Which statement must be true?",
-        "options": ["Some managers are remote", "All remote staff are managers", "Some trained staff may be remote", "No managers are remote"],
-        "correct": 2
-    },
-    {
-        "subject": "logic",
-        "difficulty": "easy",
-        "question": "If it rains, the match is canceled. The match is not canceled. What follows?",
-        "options": ["It rained", "It did not rain", "The stadium is closed", "Nothing can be concluded"],
-        "correct": 1
-    },
-    {
-        "subject": "logic",
-        "difficulty": "medium",
-        "question": "No cats are dogs. Some pets are cats. What must be true?",
-        "options": ["Some pets are not dogs", "All pets are dogs", "Some dogs are pets", "No pets are dogs"],
-        "correct": 0
-    },
-    {
-        "subject": "logic",
-        "difficulty": "hard",
-        "question": "If A implies B and B implies C, and A is true, what must be true?",
-        "options": ["B is false", "C is true", "C is false", "A is false"],
-        "correct": 1
-    },
-    {
-        "subject": "logic",
-        "difficulty": "medium",
-        "question": "All engineers are logical. Some logical people are artists. Which statement is valid?",
-        "options": ["Some engineers may be artists", "All artists are engineers", "No engineers are artists", "All logical people are engineers"],
-        "correct": 0
-    }
-]
-
-CREATE_SCHEMA = """
-CREATE TABLE IF NOT EXISTS questions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  subject TEXT NOT NULL,
-  difficulty TEXT NOT NULL,
-  question_text TEXT NOT NULL,
-  options_json TEXT NOT NULL,
-  correct_index INTEGER NOT NULL,
-  decoy_left_text TEXT NOT NULL,
-  decoy_left_options_json TEXT NOT NULL,
-  decoy_left_quality INTEGER NOT NULL DEFAULT 8,
-  decoy_right_text TEXT NOT NULL,
-  decoy_right_options_json TEXT NOT NULL,
-  decoy_right_quality INTEGER NOT NULL DEFAULT 8,
-  created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  token TEXT NOT NULL UNIQUE,
-  next_index INTEGER NOT NULL,
-  session_key TEXT NOT NULL,
-  session_nonce TEXT NOT NULL DEFAULT '',
-  questions_served INTEGER NOT NULL DEFAULT 0,
-  integrity_score INTEGER,
-  delivered_index INTEGER NOT NULL DEFAULT -1,
-  delivered_question_id INTEGER,
-  issued_at_ms INTEGER,
-  answer_received INTEGER NOT NULL DEFAULT 1,
-  question_order_json TEXT,
-  invite_token TEXT,
-  created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS session_meta (
-    token TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    started_at INTEGER NOT NULL,
-    completed_at INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS session_answers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT NOT NULL,
-    question_id INTEGER NOT NULL,
-    answer_index INTEGER NOT NULL,
-    correct INTEGER NOT NULL,
-    time_ms INTEGER NOT NULL,
-    head_compliance REAL NOT NULL,
-    server_received_at INTEGER,
-    created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS question_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT NOT NULL,
-    question_id INTEGER NOT NULL,
-    question_index INTEGER NOT NULL,
-    served_at REAL NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS session_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    detail TEXT,
-    created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS session_reviews (
-    token TEXT PRIMARY KEY,
-    status TEXT NOT NULL,
-    updated_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS admin_users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS session_notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    token TEXT NOT NULL,
-    note TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS test_sets (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    time_limit_override INTEGER,
-    passing_threshold_override REAL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS test_set_questions (
-    set_id TEXT NOT NULL,
-    question_id INTEGER NOT NULL,
-    position INTEGER NOT NULL,
-    PRIMARY KEY (set_id, question_id)
-);
-
-CREATE TABLE IF NOT EXISTS candidate_invites (
-    token TEXT PRIMARY KEY,
-    set_id TEXT NOT NULL,
-    candidate_name TEXT NOT NULL,
-    status TEXT NOT NULL,
-    session_token TEXT,
-    created_at INTEGER NOT NULL,
-    used_at INTEGER,
-    completed_at INTEGER
-);
-"""
-
-DB_LOCK = threading.Lock()
-ADMIN_TOKENS = {}
-ADMIN_TOKEN_TTL = 8 * 60 * 60
-RATE_LIMIT = {}
-RATE_LIMIT_WINDOW = 60
-RATE_LIMIT_MAX = 60
-
-
-def db_connect():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    with DB_LOCK:
-        conn = db_connect()
+    def do_GET(self):
         try:
-            conn.executescript(CREATE_SCHEMA)
+            parsed = urlparse(self.path)
+            path = parsed.path
+            if path == "/" or path == "/index.html":
+                serve_file(self, "index.html")
+                return
+            if path == "/test":
+                serve_file(self, "index.html")
+                return
+            if path == "/admin" or path == "/admin.html":
+                serve_file(self, "admin.html")
+                return
+            if path == "/styles.css":
+                serve_file(self, "styles.css", "text/css; charset=utf-8")
+                return
+            if path == "/health":
+                try:
+                    questions = fetch_question_count()
+                    db_status = "connected"
+                except Exception:
+                    questions = 0
+                    db_status = "error"
+                json_response(self, 200, {"status": "ok", "db": db_status, "questions": questions})
+                return
+            if path == "/api/local-access":
+                ip = get_local_ip()
+                json_response(self, 200, {"ip": ip, "url": f"http://{ip}:{PORT}/test"})
+                return
+            if path == "/api/admin/settings":
+                if not require_admin(self):
+                    return
+                response = {
+                    "timeLimit": int(get_setting("time_limit", "20")),
+                    "passingThreshold": float(get_setting("passing_threshold", "0.7")),
+                    "autoFlagEvents": json.loads(get_setting("auto_flag_events", "[]")),
+                    "headComplianceThreshold": float(get_setting("head_compliance_threshold", "0.6"))
+                }
+                json_response(self, 200, response)
+                return
+            if path == "/api/admin/sessions":
+                if not require_admin(self):
+                    return
+                auto_flag = set(json.loads(get_setting("auto_flag_events", "[]")))
+                compliance_threshold = float(get_setting("head_compliance_threshold", "0.6"))
+                response = []
+                for row in list_sessions():
+                    token = row["token"]
+                    answers = list_session_answers(token)
+                    events = list_session_events(token)
+                    correct = sum(1 for a in answers if a["correct"] == 1)
+                    total = len(answers)
+                    score = (correct / total) if total else 0
+                    avg_compliance = (sum(a["head_compliance"] for a in answers) / total) if total else 1
+                    integrity = compute_integrity(answers, events)
+                    flagged = any(e["event_type"] in auto_flag for e in events) or avg_compliance < compliance_threshold
+                    review = get_session_review(token)
+                    if row["completed_at"] is None:
+                        status = "In progress"
+                    elif review == "cleared":
+                        status = "Cleared"
+                    elif review == "escalated":
+                        status = "Escalated"
+                    else:
+                        status = "Flagged" if flagged else "Clean"
+                    duration = (row["completed_at"] or int(time.time())) - row["started_at"]
+                    response.append({
+                        "token": token,
+                        "name": row["name"],
+                        "startedAt": row["started_at"],
+                        "completedAt": row["completed_at"],
+                        "durationSec": duration,
+                        "score": score,
+                        "integrityScore": integrity,
+                        "status": status,
+                        "review": review
+                    })
+                json_response(self, 200, response)
+                return
+            if path.startswith("/api/admin/session/"):
+                if not require_admin(self):
+                    return
+                token = path.split("/api/admin/session/", 1)[1]
+                answers = list_session_answers(token)
+                events = list_session_events(token)
+                review = get_session_review(token)
+                response_answers = []
+                for ans in answers:
+                    q = fetch_question_by_id(ans["question_id"])
+                    response_answers.append({
+                        "questionId": ans["question_id"],
+                        "question": q["question_text"] if q else "",
+                        "options": json.loads(q["options_json"]) if q else [],
+                        "answerIndex": ans["answer_index"],
+                        "correctIndex": q["correct_index"] if q else -1,
+                        "correct": ans["correct"],
+                        "timeMs": ans["time_ms"],
+                        "headCompliance": ans["head_compliance"],
+                        "createdAt": ans["created_at"]
+                    })
+                response_events = [
+                    {
+                        "type": e["event_type"],
+                        "detail": e["detail"],
+                        "createdAt": e["created_at"]
+                    } for e in events
+                ]
+                json_response(self, 200, {
+                    "answers": response_answers,
+                    "events": response_events,
+                    "review": review,
+                    "notes": [
+                        {"note": n["note"], "createdAt": n["created_at"]} for n in list_session_notes(token)
+                    ],
+                    "integrityScore": compute_integrity(answers, events)
+                })
+                return
+            if path == "/api/admin/live-sessions":
+                if not require_admin(self):
+                    return
+                response = []
+                for row in list_sessions():
+                    if row["completed_at"] is not None:
+                        continue
+                    answers = list_session_answers(row["token"])
+                    compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
+                    response.append({
+                        "token": row["token"],
+                        "name": row["name"],
+                        "currentQuestion": len(answers) + 1,
+                        "elapsedSec": int(time.time()) - row["started_at"],
+                        "headCompliance": compliance
+                    })
+                json_response(self, 200, response)
+                return
+            if path == "/api/admin/sessions/live":
+                if not require_admin(self):
+                    return
+                response = []
+                for row in list_sessions():
+                    if row["completed_at"] is not None:
+                        continue
+                    answers = list_session_answers(row["token"])
+                    compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
+                    response.append({
+                        "token": row["token"],
+                        "name": row["name"],
+                        "currentQuestion": len(answers) + 1,
+                        "elapsedSec": int(time.time()) - row["started_at"],
+                        "headCompliance": compliance
+                    })
+                json_response(self, 200, response)
+                return
+            if path == "/api/admin/questions":
+                if not require_admin(self):
+                    return
+                rows = list_questions()
+                response = []
+                for row in rows:
+                    response.append({
+                        "id": row["id"],
+                        "subject": row["subject"],
+                        "difficulty": row["difficulty"],
+                        "question": row["question_text"],
+                        "options": json.loads(row["options_json"]),
+                        "correctIndex": row["correct_index"],
+                        "decoyLeft": {
+                            "question": row["decoy_left_text"],
+                            "options": json.loads(row["decoy_left_options_json"]),
+                            "quality": row["decoy_left_quality"]
+                        },
+                        "decoyRight": {
+                            "question": row["decoy_right_text"],
+                            "options": json.loads(row["decoy_right_options_json"]),
+                            "quality": row["decoy_right_quality"]
+                        }
+                    })
+                json_response(self, 200, response)
+                return
+            if path == "/api/admin/decoy-audit":
+                if not require_admin(self):
+                    return
+                json_response(self, 200, decoy_audit_rows())
+                return
+            if path == "/api/admin/test-sets":
+                if not require_admin(self):
+                    return
+                out = []
+                for item in list_test_sets():
+                    invites = []
+                    for invite in item["invites"]:
+                        answers = list_session_answers(invite["session_token"]) if invite["session_token"] else []
+                        total = len(answers)
+                        correct = sum(1 for a in answers if a["correct"] == 1)
+                        invites.append({
+                            "token": invite["token"],
+                            "candidateName": invite["candidate_name"],
+                            "status": invite["status"],
+                            "score": (correct / total) if total else 0
+                        })
+                    out.append({
+                        "id": item["set"]["id"],
+                        "name": item["set"]["name"],
+                        "description": item["set"]["description"],
+                        "timeLimitOverride": item["set"]["time_limit_override"],
+                        "passingThresholdOverride": item["set"]["passing_threshold_override"],
+                        "questionIds": [q["question_id"] for q in item["questions"]],
+                        "invites": invites
+                    })
+                json_response(self, 200, out)
+                return
+            if path == "/api/admin/sessions/export":
+                if not require_admin(self):
+                    return
+                rows = ["candidate name,date,score,integrity score,time taken,flagged events count"]
+                flagged_types = {"tab_hidden", "window_blur", "right_click", "devtools_open", "face_lost", "clipboard_attempt", "liveness_fail", "screen_capture_attempt"}
+                for row in list_sessions():
+                    if row["completed_at"] is None:
+                        continue
+                    answers = list_session_answers(row["token"])
+                    events = list_session_events(row["token"])
+                    total = len(answers)
+                    correct = sum(1 for a in answers if a["correct"] == 1)
+                    score = int(round((correct / total) * 100)) if total else 0
+                    integrity = compute_integrity(answers, events)
+                    flagged = sum(1 for e in events if e["event_type"] in flagged_types)
+                    duration = int(row["completed_at"]) - int(row["started_at"])
+                    safe_name = '"' + str(row["name"]).replace('"', '""') + '"'
+                    rows.append(
+                        f'{safe_name},{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["started_at"]))},{score},{integrity},{duration},{flagged}'
+                    )
+                send_text(self, 200, "\n".join(rows), "text/csv; charset=utf-8")
+                return
+            if path.startswith("/api/invite/"):
+                token = path.split("/api/invite/", 1)[1]
+                invite = fetch_invite(token)
+                if not invite:
+                    json_response(self, 404, {"error": "not_found"})
+                    return
+                json_response(self, 200, {
+                    "token": invite["token"],
+                    "candidateName": invite["candidate_name"],
+                    "status": invite["status"],
+                    "setId": invite["set_id"]
+                })
+                return
+            if path == "/api/session/status":
+                token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
+                if not token:
+                    bad_request(self, "missing_token")
+                    return
+                meta = None
+                with DB_LOCK:
+                    conn = db_connect()
+                    try:
+                        meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
+                    finally:
+                        conn.close()
+                if not meta:
+                    json_response(self, 404, {"error": "session_not_found"})
+                    return
+                json_response(self, 200, {"status": "complete" if meta["completed_at"] else "in_progress", "expired": False})
+                return
+            if path == "/api/session/result":
+                token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
+                if not token:
+                    bad_request(self, "missing_token")
+                    return
+                answers = list_session_answers(token)
+                meta = None
+                with DB_LOCK:
+                    conn = db_connect()
+                    try:
+                        meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
+                    finally:
+                        conn.close()
+                total = len(answers)
+                correct = sum(1 for a in answers if a["correct"] == 1)
+                passing = float(get_setting("passing_threshold", "0.7"))
+                score = (correct / total) if total else 0
+                time_taken_ms = int(((meta["completed_at"] or int(time.time())) - meta["started_at"]) * 1000) if meta else 0
+                json_response(self, 200, {
+                    "score": correct,
+                    "total": total,
+                    "passed": score >= passing,
+                    "timeTakenMs": time_taken_ms,
+                    "passingThreshold": passing
+                })
+                return
+            json_response(self, 404, {"error": "not_found"})
+            return
+        except Exception:
+            import traceback
+            traceback.print_exc()
             try:
-                conn.execute("ALTER TABLE sessions ADD COLUMN session_key TEXT NOT NULL DEFAULT ''")
-            except sqlite3.OperationalError:
+                json_response(self, 500, {"error": "internal_server_error"})
+            except Exception:
                 pass
-            for stmt in [
-                "ALTER TABLE questions ADD COLUMN decoy_left_quality INTEGER NOT NULL DEFAULT 8",
-                "ALTER TABLE questions ADD COLUMN decoy_right_quality INTEGER NOT NULL DEFAULT 8",
-                "ALTER TABLE sessions ADD COLUMN session_nonce TEXT NOT NULL DEFAULT ''",
-                "ALTER TABLE sessions ADD COLUMN questions_served INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE sessions ADD COLUMN integrity_score INTEGER",
-                "ALTER TABLE sessions ADD COLUMN delivered_index INTEGER NOT NULL DEFAULT -1",
-                "ALTER TABLE sessions ADD COLUMN delivered_question_id INTEGER",
+            return
                 "ALTER TABLE sessions ADD COLUMN issued_at_ms INTEGER",
                 "ALTER TABLE sessions ADD COLUMN answer_received INTEGER NOT NULL DEFAULT 1",
                 "ALTER TABLE sessions ADD COLUMN question_order_json TEXT",
@@ -1357,128 +1367,137 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        if self.path.startswith("/api/session/") and self.path == "/api/session/start":
-            if not check_rate_limit(self.client_address[0]):
-                rate_limited(self)
-                return
-
-        if self.path == "/api/session/start":
-            payload = parse_json(self)
-            if not isinstance(payload, dict):
-                bad_request(self, "invalid_json")
-                return
-            name = (payload.get("name") or "").strip() or "Candidate"
-            if not isinstance(name, str) or len(name) > 120:
-                bad_request(self, "invalid_name")
-                return
-            set_id = (payload.get("setId") or "").strip() or None
-            invite_token = (payload.get("inviteToken") or "").strip() or None
-            if invite_token:
-                invite = fetch_invite(invite_token)
-                if (
-                    not invite
-                    or invite["status"] != "unused"
-                    or int(time.time()) - int(invite["created_at"]) > 72 * 60 * 60
-                ):
-                    json_response(self, 409, {"error": "invite_unavailable"})
+        try:
+            if self.path.startswith("/api/session/") and self.path == "/api/session/start":
+                if not check_rate_limit(self.client_address[0]):
+                    rate_limited(self)
                     return
-                set_id = invite["set_id"]
-                name = invite["candidate_name"] or name
-            token = create_session(name, set_id, invite_token)
-            json_response(self, 200, {"sessionToken": token})
-            return
 
-        if self.path == "/api/session/next":
-            payload = parse_json(self)
-            token = require_string(payload, "sessionToken")
-            if not token:
-                bad_request(self, "missing_sessionToken")
+            if self.path == "/api/session/start":
+                payload = parse_json(self)
+                if not isinstance(payload, dict):
+                    bad_request(self, "invalid_json")
+                    return
+                name = (payload.get("name") or "").strip() or "Candidate"
+                if not isinstance(name, str) or len(name) > 120:
+                    bad_request(self, "invalid_name")
+                    return
+                set_id = (payload.get("setId") or "").strip() or None
+                invite_token = (payload.get("inviteToken") or "").strip() or None
+                if invite_token:
+                    invite = fetch_invite(invite_token)
+                    if (
+                        not invite
+                        or invite["status"] != "unused"
+                        or int(time.time()) - int(invite["created_at"]) > 72 * 60 * 60
+                    ):
+                        json_response(self, 409, {"error": "invite_unavailable"})
+                        return
+                    set_id = invite["set_id"]
+                    name = invite["candidate_name"] or name
+                token = create_session(name, set_id, invite_token)
+                json_response(self, 200, {"sessionToken": token})
                 return
-            if not check_session_rate_limit(token):
-                rate_limited(self)
-                return
-            session_row = get_or_create_session(token)
-            if not session_row:
-                json_response(self, 400, {"error": "invalid_session"})
-                return
-            token = session_row["token"]
-            row = fetch_question_for_session(session_row)
-            if not row:
-                json_response(self, 500, {"error": "no_questions"})
-                return
-            mark_question_issued(token, int(session_row["next_index"]), row["id"])
-            swap = random.choice([True, False])
-            left_text = row["decoy_right_text"] if swap else row["decoy_left_text"]
-            right_text = row["decoy_left_text"] if swap else row["decoy_right_text"]
-            left_opts = row["decoy_right_options_json"] if swap else row["decoy_left_options_json"]
-            right_opts = row["decoy_left_options_json"] if swap else row["decoy_right_options_json"]
-            time_limit = get_session_time_limit(token)
-            response = {
-                "sessionToken": token,
-                "questionId": row["id"],
-                "question": row["question_text"],
-                "options": json.loads(row["options_json"]),
-                "decoyLeft": {
-                    "question": left_text,
-                    "options": json.loads(left_opts)
-                },
-                "decoyRight": {
-                    "question": right_text,
-                    "options": json.loads(right_opts)
-                },
-                "timeLimit": time_limit,
-                "totalQuestions": len(json.loads(session_row["question_order_json"] or "[]")) or fetch_question_count()
-            }
-            json_response(self, 200, response)
-            return
 
-        if self.path == "/api/session/answer":
-            payload = parse_json(self)
-            token = require_string(payload, "sessionToken")
-            question_id = require_number(payload, "questionId", 1)
-            answer_index = require_number(payload, "answerIndex", -1, 3)
-            time_ms = require_number(payload, "timeMs", 0)
-            head_compliance = require_number(payload, "headCompliance", 0, 1)
-            if not token or question_id is None or answer_index is None or time_ms is None or head_compliance is None:
-                bad_request(self, "invalid_answer_payload")
+            if self.path == "/api/session/next":
+                payload = parse_json(self)
+                token = require_string(payload, "sessionToken")
+                if not token:
+                    bad_request(self, "missing_sessionToken")
+                    return
+                if not check_session_rate_limit(token):
+                    rate_limited(self)
+                    return
+                session_row = get_or_create_session(token)
+                if not session_row:
+                    json_response(self, 400, {"error": "invalid_session"})
+                    return
+                token = session_row["token"]
+                row = fetch_question_for_session(session_row)
+                if not row:
+                    json_response(self, 500, {"error": "no_questions"})
+                    return
+                mark_question_issued(token, int(session_row["next_index"]), row["id"])
+                swap = random.choice([True, False])
+                left_text = row["decoy_right_text"] if swap else row["decoy_left_text"]
+                right_text = row["decoy_left_text"] if swap else row["decoy_right_text"]
+                left_opts = row["decoy_right_options_json"] if swap else row["decoy_left_options_json"]
+                right_opts = row["decoy_left_options_json"] if swap else row["decoy_right_options_json"]
+                time_limit = get_session_time_limit(token)
+                response = {
+                    "sessionToken": token,
+                    "questionId": row["id"],
+                    "question": row["question_text"],
+                    "options": json.loads(row["options_json"]),
+                    "decoyLeft": {
+                        "question": left_text,
+                        "options": json.loads(left_opts)
+                    },
+                    "decoyRight": {
+                        "question": right_text,
+                        "options": json.loads(right_opts)
+                    },
+                    "timeLimit": time_limit,
+                    "totalQuestions": len(json.loads(session_row["question_order_json"] or "[]")) or fetch_question_count()
+                }
+                json_response(self, 200, response)
                 return
-            if not check_session_rate_limit(token):
-                rate_limited(self)
-                return
-            ok, reason = record_answer(token, question_id, answer_index, time_ms, head_compliance)
-            if not ok:
-                bad_request(self, reason)
-                return
-            json_response(self, 200, {"status": "ok"})
-            return
 
-        if self.path == "/api/session/event":
-            payload = parse_json(self)
-            token = require_string(payload, "sessionToken")
-            event_type = require_string(payload, "type")
-            detail = payload.get("detail")
-            if not token or not event_type:
-                bad_request(self, "invalid_event_payload")
+            if self.path == "/api/session/answer":
+                payload = parse_json(self)
+                token = require_string(payload, "sessionToken")
+                question_id = require_number(payload, "questionId", 1)
+                answer_index = require_number(payload, "answerIndex", -1, 3)
+                time_ms = require_number(payload, "timeMs", 0)
+                head_compliance = require_number(payload, "headCompliance", 0, 1)
+                if not token or question_id is None or answer_index is None or time_ms is None or head_compliance is None:
+                    bad_request(self, "invalid_answer_payload")
+                    return
+                if not check_session_rate_limit(token):
+                    rate_limited(self)
+                    return
+                ok, reason = record_answer(token, question_id, answer_index, time_ms, head_compliance)
+                if not ok:
+                    bad_request(self, reason)
+                    return
+                json_response(self, 200, {"status": "ok"})
                 return
-            if not check_session_rate_limit(token):
-                rate_limited(self)
-                return
-            if token and event_type:
-                record_event(token, event_type, detail)
-            json_response(self, 200, {"status": "ok"})
-            return
 
-        if self.path == "/api/session/complete":
-            payload = parse_json(self)
-            token = require_string(payload, "sessionToken")
-            if not token:
-                bad_request(self, "missing_sessionToken")
+            if self.path == "/api/session/event":
+                payload = parse_json(self)
+                token = require_string(payload, "sessionToken")
+                event_type = require_string(payload, "type")
+                detail = payload.get("detail")
+                if not token or not event_type:
+                    bad_request(self, "invalid_event_payload")
+                    return
+                if not check_session_rate_limit(token):
+                    rate_limited(self)
+                    return
+                if token and event_type:
+                    record_event(token, event_type, detail)
+                json_response(self, 200, {"status": "ok"})
                 return
-            if not check_session_rate_limit(token):
-                rate_limited(self)
+
+            if self.path == "/api/session/complete":
+                payload = parse_json(self)
+                token = require_string(payload, "sessionToken")
+                if not token:
+                    bad_request(self, "missing_sessionToken")
+                    return
+                if not check_session_rate_limit(token):
+                    rate_limited(self)
+                    return
+                complete_session(token)
+                json_response(self, 200, {"status": "ok", "score": session_score(token)})
                 return
-            complete_session(token)
-            json_response(self, 200, {"status": "ok", "score": session_score(token)})
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            try:
+                json_response(self, 500, {"error": "internal_server_error"})
+            except Exception:
+                pass
             return
 
         if self.path == "/api/admin/login":
@@ -1686,294 +1705,304 @@ class Handler(BaseHTTPRequestHandler):
         json_response(self, 404, {"error": "not_found"})
 
     def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path
-        if path == "/" or path == "/index.html":
-            serve_file(self, "index.html")
-            return
-        if path == "/test":
-            serve_file(self, "index.html")
-            return
-        if path == "/admin" or path == "/admin.html":
-            serve_file(self, "admin.html")
-            return
-        if path == "/styles.css":
-            serve_file(self, "styles.css", "text/css; charset=utf-8")
-            return
-        if path == "/health":
-            try:
-                questions = fetch_question_count()
-                db_status = "connected"
-            except Exception:
-                questions = 0
-                db_status = "error"
-            json_response(self, 200, {"status": "ok", "db": db_status, "questions": questions})
-            return
-        if path == "/api/local-access":
-            ip = get_local_ip()
-            json_response(self, 200, {"ip": ip, "url": f"http://{ip}:{PORT}/test"})
-            return
-        if path == "/api/admin/settings":
-            if not require_admin(self):
+        try:
+            parsed = urlparse(self.path)
+            path = parsed.path
+            if path == "/" or path == "/index.html":
+                serve_file(self, "index.html")
                 return
-            response = {
-                "timeLimit": int(get_setting("time_limit", "20")),
-                "passingThreshold": float(get_setting("passing_threshold", "0.7")),
-                "autoFlagEvents": json.loads(get_setting("auto_flag_events", "[]")),
-                "headComplianceThreshold": float(get_setting("head_compliance_threshold", "0.6"))
-            }
-            json_response(self, 200, response)
-            return
-        if path == "/api/admin/sessions":
-            if not require_admin(self):
+            if path == "/test":
+                serve_file(self, "index.html")
                 return
-            auto_flag = set(json.loads(get_setting("auto_flag_events", "[]")))
-            compliance_threshold = float(get_setting("head_compliance_threshold", "0.6"))
-            response = []
-            for row in list_sessions():
-                token = row["token"]
+            if path == "/admin" or path == "/admin.html":
+                serve_file(self, "admin.html")
+                return
+            if path == "/styles.css":
+                serve_file(self, "styles.css", "text/css; charset=utf-8")
+                return
+            if path == "/health":
+                try:
+                    questions = fetch_question_count()
+                    db_status = "connected"
+                except Exception:
+                    questions = 0
+                    db_status = "error"
+                json_response(self, 200, {"status": "ok", "db": db_status, "questions": questions})
+                return
+            if path == "/api/local-access":
+                ip = get_local_ip()
+                json_response(self, 200, {"ip": ip, "url": f"http://{ip}:{PORT}/test"})
+                return
+            if path == "/api/admin/settings":
+                if not require_admin(self):
+                    return
+                response = {
+                    "timeLimit": int(get_setting("time_limit", "20")),
+                    "passingThreshold": float(get_setting("passing_threshold", "0.7")),
+                    "autoFlagEvents": json.loads(get_setting("auto_flag_events", "[]")),
+                    "headComplianceThreshold": float(get_setting("head_compliance_threshold", "0.6"))
+                }
+                json_response(self, 200, response)
+                return
+            if path == "/api/admin/sessions":
+                if not require_admin(self):
+                    return
+                auto_flag = set(json.loads(get_setting("auto_flag_events", "[]")))
+                compliance_threshold = float(get_setting("head_compliance_threshold", "0.6"))
+                response = []
+                for row in list_sessions():
+                    token = row["token"]
+                    answers = list_session_answers(token)
+                    events = list_session_events(token)
+                    correct = sum(1 for a in answers if a["correct"] == 1)
+                    total = len(answers)
+                    score = (correct / total) if total else 0
+                    avg_compliance = (sum(a["head_compliance"] for a in answers) / total) if total else 1
+                    integrity = compute_integrity(answers, events)
+                    flagged = any(e["event_type"] in auto_flag for e in events) or avg_compliance < compliance_threshold
+                    review = get_session_review(token)
+                    if row["completed_at"] is None:
+                        status = "In progress"
+                    elif review == "cleared":
+                        status = "Cleared"
+                    elif review == "escalated":
+                        status = "Escalated"
+                    else:
+                        status = "Flagged" if flagged else "Clean"
+                    duration = (row["completed_at"] or int(time.time())) - row["started_at"]
+                    response.append({
+                        "token": token,
+                        "name": row["name"],
+                        "startedAt": row["started_at"],
+                        "completedAt": row["completed_at"],
+                        "durationSec": duration,
+                        "score": score,
+                        "integrityScore": integrity,
+                        "status": status,
+                        "review": review
+                    })
+                json_response(self, 200, response)
+                return
+            if path.startswith("/api/admin/session/"):
+                if not require_admin(self):
+                    return
+                token = path.split("/api/admin/session/", 1)[1]
                 answers = list_session_answers(token)
                 events = list_session_events(token)
-                correct = sum(1 for a in answers if a["correct"] == 1)
-                total = len(answers)
-                score = (correct / total) if total else 0
-                avg_compliance = (sum(a["head_compliance"] for a in answers) / total) if total else 1
-                integrity = compute_integrity(answers, events)
-                flagged = any(e["event_type"] in auto_flag for e in events) or avg_compliance < compliance_threshold
                 review = get_session_review(token)
-                if row["completed_at"] is None:
-                    status = "In progress"
-                elif review == "cleared":
-                    status = "Cleared"
-                elif review == "escalated":
-                    status = "Escalated"
-                else:
-                    status = "Flagged" if flagged else "Clean"
-                duration = (row["completed_at"] or int(time.time())) - row["started_at"]
-                response.append({
-                    "token": token,
-                    "name": row["name"],
-                    "startedAt": row["started_at"],
-                    "completedAt": row["completed_at"],
-                    "durationSec": duration,
-                    "score": score,
-                    "integrityScore": integrity,
-                    "status": status,
-                    "review": review
+                response_answers = []
+                for ans in answers:
+                    q = fetch_question_by_id(ans["question_id"])
+                    response_answers.append({
+                        "questionId": ans["question_id"],
+                        "question": q["question_text"] if q else "",
+                        "options": json.loads(q["options_json"]) if q else [],
+                        "answerIndex": ans["answer_index"],
+                        "correctIndex": q["correct_index"] if q else -1,
+                        "correct": ans["correct"],
+                        "timeMs": ans["time_ms"],
+                        "headCompliance": ans["head_compliance"],
+                        "createdAt": ans["created_at"]
+                    })
+                response_events = [
+                    {
+                        "type": e["event_type"],
+                        "detail": e["detail"],
+                        "createdAt": e["created_at"]
+                    } for e in events
+                ]
+                json_response(self, 200, {
+                    "answers": response_answers,
+                    "events": response_events,
+                    "review": review,
+                    "notes": [
+                        {"note": n["note"], "createdAt": n["created_at"]} for n in list_session_notes(token)
+                    ],
+                    "integrityScore": compute_integrity(answers, events)
                 })
-            json_response(self, 200, response)
-            return
-        if path.startswith("/api/admin/session/"):
-            if not require_admin(self):
                 return
-            token = path.split("/api/admin/session/", 1)[1]
-            answers = list_session_answers(token)
-            events = list_session_events(token)
-            review = get_session_review(token)
-            response_answers = []
-            for ans in answers:
-                q = fetch_question_by_id(ans["question_id"])
-                response_answers.append({
-                    "questionId": ans["question_id"],
-                    "question": q["question_text"] if q else "",
-                    "options": json.loads(q["options_json"]) if q else [],
-                    "answerIndex": ans["answer_index"],
-                    "correctIndex": q["correct_index"] if q else -1,
-                    "correct": ans["correct"],
-                    "timeMs": ans["time_ms"],
-                    "headCompliance": ans["head_compliance"],
-                    "createdAt": ans["created_at"]
-                })
-            response_events = [
-                {
-                    "type": e["event_type"],
-                    "detail": e["detail"],
-                    "createdAt": e["created_at"]
-                } for e in events
-            ]
-            json_response(self, 200, {
-                "answers": response_answers,
-                "events": response_events,
-                "review": review,
-                "notes": [
-                    {"note": n["note"], "createdAt": n["created_at"]} for n in list_session_notes(token)
-                ],
-                "integrityScore": compute_integrity(answers, events)
-            })
-            return
-        if path == "/api/admin/live-sessions":
-            if not require_admin(self):
+            if path == "/api/admin/live-sessions":
+                if not require_admin(self):
+                    return
+                response = []
+                for row in list_sessions():
+                    if row["completed_at"] is not None:
+                        continue
+                    answers = list_session_answers(row["token"])
+                    compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
+                    response.append({
+                        "token": row["token"],
+                        "name": row["name"],
+                        "currentQuestion": len(answers) + 1,
+                        "elapsedSec": int(time.time()) - row["started_at"],
+                        "headCompliance": compliance
+                    })
+                json_response(self, 200, response)
                 return
-            response = []
-            for row in list_sessions():
-                if row["completed_at"] is not None:
-                    continue
-                answers = list_session_answers(row["token"])
-                compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
-                response.append({
-                    "token": row["token"],
-                    "name": row["name"],
-                    "currentQuestion": len(answers) + 1,
-                    "elapsedSec": int(time.time()) - row["started_at"],
-                    "headCompliance": compliance
-                })
-            json_response(self, 200, response)
-            return
-        if path == "/api/admin/sessions/live":
-            if not require_admin(self):
+            if path == "/api/admin/sessions/live":
+                if not require_admin(self):
+                    return
+                response = []
+                for row in list_sessions():
+                    if row["completed_at"] is not None:
+                        continue
+                    answers = list_session_answers(row["token"])
+                    compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
+                    response.append({
+                        "token": row["token"],
+                        "name": row["name"],
+                        "currentQuestion": len(answers) + 1,
+                        "elapsedSec": int(time.time()) - row["started_at"],
+                        "headCompliance": compliance
+                    })
+                json_response(self, 200, response)
                 return
-            response = []
-            for row in list_sessions():
-                if row["completed_at"] is not None:
-                    continue
-                answers = list_session_answers(row["token"])
-                compliance = (sum(a["head_compliance"] for a in answers) / len(answers)) if answers else 1
-                response.append({
-                    "token": row["token"],
-                    "name": row["name"],
-                    "currentQuestion": len(answers) + 1,
-                    "elapsedSec": int(time.time()) - row["started_at"],
-                    "headCompliance": compliance
-                })
-            json_response(self, 200, response)
-            return
-        if path == "/api/admin/questions":
-            if not require_admin(self):
+            if path == "/api/admin/questions":
+                if not require_admin(self):
+                    return
+                rows = list_questions()
+                response = []
+                for row in rows:
+                    response.append({
+                        "id": row["id"],
+                        "subject": row["subject"],
+                        "difficulty": row["difficulty"],
+                        "question": row["question_text"],
+                        "options": json.loads(row["options_json"]),
+                        "correctIndex": row["correct_index"],
+                        "decoyLeft": {
+                            "question": row["decoy_left_text"],
+                            "options": json.loads(row["decoy_left_options_json"]),
+                            "quality": row["decoy_left_quality"]
+                        },
+                        "decoyRight": {
+                            "question": row["decoy_right_text"],
+                            "options": json.loads(row["decoy_right_options_json"]),
+                            "quality": row["decoy_right_quality"]
+                        }
+                    })
+                json_response(self, 200, response)
                 return
-            rows = list_questions()
-            response = []
-            for row in rows:
-                response.append({
-                    "id": row["id"],
-                    "subject": row["subject"],
-                    "difficulty": row["difficulty"],
-                    "question": row["question_text"],
-                    "options": json.loads(row["options_json"]),
-                    "correctIndex": row["correct_index"],
-                    "decoyLeft": {
-                        "question": row["decoy_left_text"],
-                        "options": json.loads(row["decoy_left_options_json"]),
-                        "quality": row["decoy_left_quality"]
-                    },
-                    "decoyRight": {
-                        "question": row["decoy_right_text"],
-                        "options": json.loads(row["decoy_right_options_json"]),
-                        "quality": row["decoy_right_quality"]
-                    }
-                })
-            json_response(self, 200, response)
-            return
-        if path == "/api/admin/decoy-audit":
-            if not require_admin(self):
+            if path == "/api/admin/decoy-audit":
+                if not require_admin(self):
+                    return
+                json_response(self, 200, decoy_audit_rows())
                 return
-            json_response(self, 200, decoy_audit_rows())
-            return
-        if path == "/api/admin/test-sets":
-            if not require_admin(self):
+            if path == "/api/admin/test-sets":
+                if not require_admin(self):
+                    return
+                out = []
+                for item in list_test_sets():
+                    invites = []
+                    for invite in item["invites"]:
+                        answers = list_session_answers(invite["session_token"]) if invite["session_token"] else []
+                        total = len(answers)
+                        correct = sum(1 for a in answers if a["correct"] == 1)
+                        invites.append({
+                            "token": invite["token"],
+                            "candidateName": invite["candidate_name"],
+                            "status": invite["status"],
+                            "score": (correct / total) if total else 0
+                        })
+                    out.append({
+                        "id": item["set"]["id"],
+                        "name": item["set"]["name"],
+                        "description": item["set"]["description"],
+                        "timeLimitOverride": item["set"]["time_limit_override"],
+                        "passingThresholdOverride": item["set"]["passing_threshold_override"],
+                        "questionIds": [q["question_id"] for q in item["questions"]],
+                        "invites": invites
+                    })
+                json_response(self, 200, out)
                 return
-            out = []
-            for item in list_test_sets():
-                invites = []
-                for invite in item["invites"]:
-                    answers = list_session_answers(invite["session_token"]) if invite["session_token"] else []
+            if path == "/api/admin/sessions/export":
+                if not require_admin(self):
+                    return
+                rows = ["candidate name,date,score,integrity score,time taken,flagged events count"]
+                flagged_types = {"tab_hidden", "window_blur", "right_click", "devtools_open", "face_lost", "clipboard_attempt", "liveness_fail", "screen_capture_attempt"}
+                for row in list_sessions():
+                    if row["completed_at"] is None:
+                        continue
+                    answers = list_session_answers(row["token"])
+                    events = list_session_events(row["token"])
                     total = len(answers)
                     correct = sum(1 for a in answers if a["correct"] == 1)
-                    invites.append({
-                        "token": invite["token"],
-                        "candidateName": invite["candidate_name"],
-                        "status": invite["status"],
-                        "score": (correct / total) if total else 0
-                    })
-                out.append({
-                    "id": item["set"]["id"],
-                    "name": item["set"]["name"],
-                    "description": item["set"]["description"],
-                    "timeLimitOverride": item["set"]["time_limit_override"],
-                    "passingThresholdOverride": item["set"]["passing_threshold_override"],
-                    "questionIds": [q["question_id"] for q in item["questions"]],
-                    "invites": invites
-                })
-            json_response(self, 200, out)
-            return
-        if path == "/api/admin/sessions/export":
-            if not require_admin(self):
+                    score = int(round((correct / total) * 100)) if total else 0
+                    integrity = compute_integrity(answers, events)
+                    flagged = sum(1 for e in events if e["event_type"] in flagged_types)
+                    duration = int(row["completed_at"]) - int(row["started_at"])
+                    safe_name = '"' + str(row["name"]).replace('"', '""') + '"'
+                    rows.append(
+                        f'{safe_name},{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["started_at"])))},{score},{integrity},{duration},{flagged}'
+                    )
+                send_text(self, 200, "\n".join(rows), "text/csv; charset=utf-8")
                 return
-            rows = ["candidate name,date,score,integrity score,time taken,flagged events count"]
-            flagged_types = {"tab_hidden", "window_blur", "right_click", "devtools_open", "face_lost", "clipboard_attempt", "liveness_fail", "screen_capture_attempt"}
-            for row in list_sessions():
-                if row["completed_at"] is None:
-                    continue
-                answers = list_session_answers(row["token"])
-                events = list_session_events(row["token"])
+            if path.startswith("/api/invite/"):
+                token = path.split("/api/invite/", 1)[1]
+                invite = fetch_invite(token)
+                if not invite:
+                    json_response(self, 404, {"error": "not_found"})
+                    return
+                json_response(self, 200, {
+                    "token": invite["token"],
+                    "candidateName": invite["candidate_name"],
+                    "status": invite["status"],
+                    "setId": invite["set_id"]
+                })
+                return
+            if path == "/api/session/status":
+                token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
+                if not token:
+                    bad_request(self, "missing_token")
+                    return
+                meta = None
+                with DB_LOCK:
+                    conn = db_connect()
+                    try:
+                        meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
+                    finally:
+                        conn.close()
+                if not meta:
+                    json_response(self, 404, {"error": "session_not_found"})
+                    return
+                json_response(self, 200, {"status": "complete" if meta["completed_at"] else "in_progress", "expired": False})
+                return
+            if path == "/api/session/result":
+                token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
+                if not token:
+                    bad_request(self, "missing_token")
+                    return
+                answers = list_session_answers(token)
+                meta = None
+                with DB_LOCK:
+                    conn = db_connect()
+                    try:
+                        meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
+                    finally:
+                        conn.close()
                 total = len(answers)
                 correct = sum(1 for a in answers if a["correct"] == 1)
-                score = int(round((correct / total) * 100)) if total else 0
-                integrity = compute_integrity(answers, events)
-                flagged = sum(1 for e in events if e["event_type"] in flagged_types)
-                duration = int(row["completed_at"]) - int(row["started_at"])
-                safe_name = '"' + str(row["name"]).replace('"', '""') + '"'
-                rows.append(
-                    f'{safe_name},{time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["started_at"]))},{score},{integrity},{duration},{flagged}'
-                )
-            send_text(self, 200, "\n".join(rows), "text/csv; charset=utf-8")
-            return
-        if path.startswith("/api/invite/"):
-            token = path.split("/api/invite/", 1)[1]
-            invite = fetch_invite(token)
-            if not invite:
-                json_response(self, 404, {"error": "not_found"})
+                passing = float(get_setting("passing_threshold", "0.7"))
+                score = (correct / total) if total else 0
+                time_taken_ms = int(((meta["completed_at"] or int(time.time())) - meta["started_at"]) * 1000) if meta else 0
+                json_response(self, 200, {
+                    "score": correct,
+                    "total": total,
+                    "passed": score >= passing,
+                    "timeTakenMs": time_taken_ms,
+                    "passingThreshold": passing
+                })
                 return
-            json_response(self, 200, {
-                "token": invite["token"],
-                "candidateName": invite["candidate_name"],
-                "status": invite["status"],
-                "setId": invite["set_id"]
-            })
+            json_response(self, 404, {"error": "not_found"})
             return
-        if path == "/api/session/status":
-            token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
-            if not token:
-                bad_request(self, "missing_token")
-                return
-            meta = None
-            with DB_LOCK:
-                conn = db_connect()
-                try:
-                    meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
-                finally:
-                    conn.close()
-            if not meta:
-                json_response(self, 404, {"error": "session_not_found"})
-                return
-            json_response(self, 200, {"status": "complete" if meta["completed_at"] else "in_progress", "expired": False})
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            try:
+                json_response(self, 500, {"error": "internal_server_error"})
+            except Exception:
+                pass
             return
-        if path == "/api/session/result":
-            token = parsed.query.split("token=", 1)[1] if "token=" in parsed.query else ""
-            if not token:
-                bad_request(self, "missing_token")
-                return
-            answers = list_session_answers(token)
-            meta = None
-            with DB_LOCK:
-                conn = db_connect()
-                try:
-                    meta = conn.execute("SELECT started_at, completed_at FROM session_meta WHERE token = ?", (token,)).fetchone()
-                finally:
-                    conn.close()
-            total = len(answers)
-            correct = sum(1 for a in answers if a["correct"] == 1)
-            passing = float(get_setting("passing_threshold", "0.7"))
-            score = (correct / total) if total else 0
-            time_taken_ms = int(((meta["completed_at"] or int(time.time())) - meta["started_at"]) * 1000) if meta else 0
-            json_response(self, 200, {
-                "score": correct,
-                "total": total,
-                "passed": score >= passing,
-                "timeTakenMs": time_taken_ms,
-                "passingThreshold": passing
-            })
-            return
-        json_response(self, 404, {"error": "not_found"})
 
     def log_message(self, format, *args):
         return

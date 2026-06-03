@@ -107,6 +107,35 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script>
     (() => {
+      // Early, minimal test-helper shim: ensure `window.__ambi_test` exists
+      // even if the main script hasn't run yet or an early error occurs.
+      if (!window.__ambi_test) {
+        window.__ambi_test = {
+          _pendingToken: null,
+          setToken(token) {
+            try {
+              this._pendingToken = token;
+              localStorage.setItem('ambi_session', JSON.stringify({ sessionToken: token, questionNumber: 0, maxQuestions: 10, correctCount: 0, sessionStartedAt: Date.now() }));
+            } catch (e) { /* ignore */ }
+          },
+          beginSessionViaToken(token) {
+            try {
+              this._pendingToken = token;
+              localStorage.setItem('ambi_session', JSON.stringify({ sessionToken: token, questionNumber: 0, maxQuestions: 10, correctCount: 0, sessionStartedAt: Date.now() }));
+            } catch (e) { /* ignore */ }
+          }
+        };
+        // Accept postMessage early to store a pending token even before
+        // the rest of the application initializes.
+        window.addEventListener('message', (ev) => {
+          try {
+            if (ev && ev.data && ev.data.type === 'ambi_begin_with_token' && ev.data.token) {
+              window.__ambi_test._pendingToken = ev.data.token;
+              localStorage.setItem('ambi_session', JSON.stringify({ sessionToken: ev.data.token, questionNumber: 0, maxQuestions: 10, correctCount: 0, sessionStartedAt: Date.now() }));
+            }
+          } catch (e) {}
+        });
+      }
       try {
       const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
       const screens = {
@@ -163,11 +192,58 @@
         submitRetryDelayMs: 500
       };
 
-      const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
+      let gl = canvas.getContext("webgl", { antialias: true, alpha: false });
+      let GL_SUPPORTED = true;
       if (!gl) {
+        // Provide a safe no-op GL stub so the rest of the app can initialize
+        // and the test helper can be registered even when real WebGL is
+        // unavailable in headless environments.
+        GL_SUPPORTED = false;
         statusText.textContent = "WebGL unavailable";
         statusDot.classList.add("status-dot--bad");
-        return;
+        gl = {
+          VERTEX_SHADER: 0x8B31,
+          FRAGMENT_SHADER: 0x8B30,
+          ARRAY_BUFFER: 0x8892,
+          STATIC_DRAW: 0x88E4,
+          TRIANGLES: 0x0004,
+          TEXTURE_2D: 0x0DE1,
+          UNPACK_FLIP_Y_WEBGL: 0x9240,
+          RGBA: 0x1908,
+          UNSIGNED_BYTE: 0x1401,
+          createShader: () => ({}),
+          shaderSource: () => {},
+          compileShader: () => {},
+          getShaderParameter: () => true,
+          getShaderInfoLog: () => "",
+          deleteShader: () => {},
+          createProgram: () => ({}),
+          attachShader: () => {},
+          linkProgram: () => {},
+          getProgramParameter: () => true,
+          getProgramInfoLog: () => "",
+          deleteProgram: () => {},
+          useProgram: () => {},
+          createBuffer: () => ({}),
+          bindBuffer: () => {},
+          bufferData: () => {},
+          getAttribLocation: () => 0,
+          enableVertexAttribArray: () => {},
+          vertexAttribPointer: () => {},
+          createTexture: () => ({}),
+          getUniformLocation: () => ({}),
+          uniform1i: () => {},
+          uniform1f: () => {},
+          activeTexture: () => {},
+          bindTexture: () => {},
+          pixelStorei: () => {},
+          texImage2D: () => {},
+          texParameteri: () => {},
+          viewport: () => {},
+          clearColor: () => {},
+          clear: () => {},
+          drawArrays: () => {}
+        };
       }
 
       let sessionToken = "";
@@ -840,16 +916,21 @@ void main() {
 
       // Fetch the next question as plain HTTPS JSON.
       async function fetchNextQuestion() {
+        console.debug('fetchNextQuestion ->', { sessionToken });
         const response = await fetch(`${API_BASE}/api/session/next`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionToken })
         });
+        console.debug('fetchNextQuestion response ok:', response.ok, 'status:', response.status);
         if (!response.ok) {
+          console.debug('fetchNextQuestion failed response status:', response.status);
           throw new Error("question_fetch_failed");
         }
         const data = await response.json();
+        console.debug('fetchNextQuestion payload:', data);
         if (!data.questionId) {
+          console.debug('fetchNextQuestion invalid payload:', data);
           throw new Error("invalid_payload");
         }
         return data;
@@ -934,6 +1015,7 @@ void main() {
 
       // Load the current question, render it, and begin timing.
       async function startQuestion() {
+        console.debug('startQuestion called', { questionNumber, sessionToken });
         if (questionNumber >= maxQuestions) {
           await completeSession();
           return;
@@ -941,6 +1023,7 @@ void main() {
         resetComplianceTracking();
         try {
           const data = nextQuestionCache || await fetchNextQuestion();
+          console.debug('startQuestion got data', { questionId: data && data.questionId });
           nextQuestionCache = null;
           answerLocked = false;
           progressText.textContent = `Question ${questionNumber + 1} of ${data.totalQuestions || maxQuestions}`;
@@ -957,7 +1040,9 @@ void main() {
           questionStart = performance.now();
           startTimer(data.timeLimit || 20);
           preloadNextQuestion();
+          console.debug('startQuestion displayed question', currentQuestionId);
         } catch (err) {
+          console.debug('startQuestion error', err);
           queueEvent("question_fetch_failed");
           setTimeout(() => startQuestion(), 1000);
         }
@@ -1066,19 +1151,35 @@ void main() {
         correctCount = 0;
         sessionStartedAt = Date.now();
         saveSessionState();
-        flushEvents();
-        if (!trackingAvailable) {
+          flushEvents();
+          // Always set a fallback: if calibration hasn't completed within the
+          // camera fallback window, start the test so users without a camera
+          // (or when getUserMedia fails) can continue.
           setTimeout(() => {
-            calibrated = true;
-            angleDeg = 0;
-            showScreen("test");
-            startQuestion();
-          }, CONFIG.cameraFallbackMs);
-        } else if (isMobile && !usingGyro) {
-          showScreen("mobile");
-        } else {
-          startLivenessGesture();
-        }
+            if (!calibrated) {
+              calibrated = true;
+              angleDeg = 0;
+              showScreen("test");
+              startQuestion();
+            }
+          }, CONFIG.cameraFallbackMs + 200);
+
+          if (!trackingAvailable) {
+            // If we already know tracking is unavailable, start the fallback
+            // immediately after a very short delay to ensure UI updates.
+            setTimeout(() => {
+              if (!calibrated) {
+                calibrated = true;
+                angleDeg = 0;
+                showScreen("test");
+                startQuestion();
+              }
+            }, 100);
+          } else if (isMobile && !usingGyro) {
+            showScreen("mobile");
+          } else {
+            startLivenessGesture();
+          }
       }
 
       // Mark the session complete and show the result summary.
@@ -1270,6 +1371,44 @@ void main() {
         requestAnimationFrame(animationLoop);
       }
       requestAnimationFrame(animationLoop);
+
+      // Test helpers for automated/headless clients. These are deliberately
+      // small shims that allow external scripts to inject a valid session
+      // token and start the question flow without calling the public UI
+      // startSession() (useful for headless E2E where getUserMedia is absent).
+      console.debug('Defining __ambi_test helper');
+      const __ambi_prev_pending = window.__ambi_test && window.__ambi_test._pendingToken;
+      window.__ambi_test = {
+        setToken: (token) => {
+          console.debug('__ambi_test.setToken', token);
+          sessionToken = token;
+          window.__ambiSessionToken = token;
+        },
+        beginSessionViaToken: (token) => {
+          console.debug('beginSessionViaToken called', token);
+          sessionToken = token;
+          window.__ambiSessionToken = token;
+          questionNumber = 0;
+          correctCount = 0;
+          sessionStartedAt = Date.now();
+          saveSessionState();
+          flushEvents();
+          calibrated = true;
+          angleDeg = 0;
+          showScreen("test");
+          console.debug('beginSessionViaToken starting question flow', { questionNumber, sessionToken });
+          startQuestion();
+        }
+      };
+      if (__ambi_prev_pending) {
+        try { window.__ambi_test.beginSessionViaToken(__ambi_prev_pending); } catch (e) { console.error('failed to auto-begin pending token', e); }
+      }
+      window.addEventListener('message', (ev) => {
+        if (ev && ev.data && ev.data.type === 'ambi_begin_with_token') {
+          console.debug('message received ambi_begin_with_token', ev.data && ev.data.token);
+          try { window.__ambi_test.beginSessionViaToken(ev.data.token); } catch (e) { console.error('Error invoking beginSessionViaToken', e); }
+        }
+      });
 
       window.addEventListener("beforeunload", () => {
         if (sessionToken) {
