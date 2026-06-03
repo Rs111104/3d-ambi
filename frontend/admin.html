@@ -2,901 +2,222 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin Dashboard</title>
+  <title>3D Ambi | Admin Command Center</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="admin-page">
-  <div id="loginScreen" class="login">
-    <h2>Admin Login</h2>
-    <label>Username</label>
-    <input id="loginUser" type="text" />
-    <label>Password</label>
-    <input id="loginPass" type="password" />
-    <button id="loginBtn">Sign in</button>
-    <div id="loginMsg" class="muted"></div>
+  <!-- Auth Screen -->
+  <div id="loginScreen" class="screen active">
+    <div style="max-width: 400px; margin: 100px auto;">
+      <div class="card">
+        <h2>Proctor Login</h2>
+        <div class="mt-16">
+          <input id="loginUser" type="text" class="input" placeholder="Username" />
+        </div>
+        <div class="mt-16">
+          <input id="loginPass" type="password" class="input" placeholder="Password" />
+        </div>
+        <button id="loginBtn" class="btn mt-16" style="width: 100%;">Access Dashboard</button>
+        <div id="loginMsg" class="error-text mt-16"></div>
+      </div>
+    </div>
   </div>
 
+  <!-- Main Dashboard -->
   <div id="dashboard" class="layout is-hidden">
     <aside class="sidebar">
-      <div class="brand">Admin <span id="liveBadge" class="live-badge">0</span></div>
-      <button class="nav-btn active" data-screen="sessions">Sessions</button>
-      <button class="nav-btn" data-screen="questions">Questions</button>
-      <button class="nav-btn" data-screen="questionBank">Question Bank</button>
-      <button class="nav-btn" data-screen="testSets">Test Sets</button>
-      <button class="nav-btn" data-screen="mobile">Mobile access</button>
-      <button class="nav-btn" data-screen="settings">Settings</button>
+      <div class="brand" style="margin-bottom: 2rem;">3D Ambi Admin</div>
+      <nav role="navigation">
+        <button class="nav-btn active" data-screen="sessions">Exam Sessions</button>
+        <button class="nav-btn" data-screen="questions">Question Bank</button>
+        <button class="nav-btn" data-screen="simulator">UI Simulator</button>
+        <button class="nav-btn" data-screen="settings">System Settings</button>
+      </nav>
+      <div style="margin-top: auto;">
+        <button class="btn" style="width: 100%; background: #ef4444;" onclick="location.reload()">Sign Out</button>
+      </div>
     </aside>
-    <main class="content">
+
+    <main class="content" role="main">
+      <!-- Sessions Table -->
       <section id="screen-sessions" class="screen active">
-        <div class="panel">
-          <h2>Sessions</h2>
-          <div class="row mb-12">
-            <input id="sessionSearch" type="text" placeholder="Candidate name" />
-            <input id="sessionStatusFilter" type="text" placeholder="Status" />
-            <input id="sessionIntegrityMin" type="number" placeholder="Min integrity" />
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2>Recent Sessions</h2>
+            <button id="exportCsv" class="btn">Export CSV</button>
           </div>
-          <button id="exportSessionsBtn">Export CSV</button>
           <table class="table" id="sessionsTable">
             <thead>
               <tr>
-                <th>Candidate</th>
-                <th>Start</th>
+                <th style="cursor:pointer">Candidate ↕</th>
+                <th style="cursor:pointer">Time ↕</th>
                 <th>Duration</th>
                 <th>Score</th>
-                <th>Integrity</th>
+                <th>Proctor Status</th>
               </tr>
             </thead>
             <tbody></tbody>
           </table>
-          <div class="row pagination">
-            <button id="sessionsPrevBtn">Previous</button>
-            <span id="sessionsPageText" class="muted">Page 1</span>
-            <button id="sessionsNextBtn">Next</button>
-          </div>
         </div>
-        <div class="panel is-hidden" id="sessionDetail">
-          <h2>Session Detail</h2>
-          <div id="detailMeta" class="muted"></div>
-          <div id="detailIntegrity" class="mt-10"></div>
-          <div class="row mt-10">
-            <button id="markCleared">Mark cleared</button>
-            <button id="markEscalated">Mark escalated</button>
-            <div id="reviewMsg" class="muted"></div>
-          </div>
-          <h3>Answers</h3>
-          <table class="table" id="answersTable">
-            <thead>
-              <tr>
-                <th>Question</th>
-                <th>Answer</th>
-                <th>Correct</th>
-                <th>Time</th>
-                <th>Compliance</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <h3>Anomalies</h3>
-          <table class="table" id="eventsTable">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Detail</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
+
+        <div id="replaySection" class="card mt-16 is-hidden">
+          <h2>Session Forensic Replay</h2>
+          <div id="replayTimeline" class="checklist mt-16" style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border-color); padding: 1rem;"></div>
         </div>
       </section>
 
-      <section id="screen-testSets" class="screen">
-        <div class="panel">
-          <h2>Test Sets</h2>
-          <table class="table" id="testSetsTable">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Questions</th>
-                <th>Link</th>
-                <th>Invite</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="panel">
-          <h2>Create Test Set</h2>
-          <label>Name</label>
-          <input id="setName" type="text" />
-          <label>Description</label>
-          <textarea id="setDescription"></textarea>
-          <div class="grid grid-2">
-            <div>
-              <label>Time limit override (seconds)</label>
-              <input id="setTimeOverride" type="number" min="5" />
-            </div>
-            <div>
-              <label>Passing threshold override (0 to 1)</label>
-              <input id="setPassingOverride" type="number" min="0" max="1" step="0.01" />
-            </div>
-          </div>
-          <label>Questions</label>
-          <div id="setQuestionList" class="check-list"></div>
-          <button id="createSetBtn">Create set</button>
-          <div id="setMsg" class="muted"></div>
-        </div>
-        <div class="panel is-hidden" id="invitePanel">
-          <h2>Invites</h2>
-          <div class="row">
-            <input id="inviteName" type="text" placeholder="Candidate name" />
-            <button id="createInviteBtn">Create invite</button>
-          </div>
-          <div id="inviteMsg" class="muted"></div>
-          <table class="table" id="invitesTable">
-            <thead>
-              <tr>
-                <th>Candidate</th>
-                <th>Status</th>
-                <th>Score</th>
-                <th>Link</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-          <h3>Timeline</h3>
-          <div id="sessionTimeline" class="row timeline-row"></div>
-          <h3>Admin Notes</h3>
-          <textarea id="noteText"></textarea>
-          <button id="saveNoteBtn">Save note</button>
-          <div id="notesList" class="muted"></div>
-        </div>
-        <div class="panel">
-          <h2>Live Sessions</h2>
-          <table class="table" id="liveSessionsTable">
-            <thead><tr><th>Name</th><th>Question</th><th>Elapsed</th><th>Compliance</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section id="screen-mobile" class="screen">
-        <div class="panel">
-          <h2>Mobile Access</h2>
-          <button id="showMobileAccessBtn">Show QR code</button>
-          <div id="mobileAccessUrl" class="muted mt-12"></div>
-          <div id="qrCode" class="mt-16"></div>
-        </div>
-      </section>
-
-      <section id="screen-questionBank" class="screen">
-        <div class="panel">
-          <h2>Decoy Health</h2>
-          <div id="decoyHealthSummary" class="muted"></div>
-          <table class="table" id="decoyAuditTable">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Question</th>
-                <th>Left</th>
-                <th>Right</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </section>
-
+      <!-- Question Bank -->
       <section id="screen-questions" class="screen">
-        <div class="panel">
-          <h2>Questions</h2>
-          <div class="row mb-12">
-            <input id="questionSearch" type="text" placeholder="Search questions" />
-            <input id="questionCategoryFilter" type="text" placeholder="Category" />
-            <input id="questionDifficultyFilter" type="text" placeholder="Difficulty" />
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <h2>Manage Questions</h2>
+            <button id="addQ" class="btn">+ New Question</button>
           </div>
           <table class="table" id="questionsTable">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Subject</th>
-                <th>Difficulty</th>
-                <th>Question</th>
-              </tr>
-            </thead>
+            <thead><tr><th>ID</th><th>Subject</th><th>Question</th><th>Decoy Integrity</th><th>Actions</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
-        <div class="panel is-hidden" id="questionDetail">
-          <h2>Question Detail</h2>
-          <div id="questionDetailBody" class="muted"></div>
-        </div>
-        <div class="panel">
-          <h2>Add Question</h2>
-          <div class="grid grid-2">
-            <div>
-              <label>Subject</label>
-              <input id="qSubject" type="text" value="general" />
-            </div>
-            <div>
-              <label>Difficulty</label>
-              <input id="qDifficulty" type="text" value="medium" />
-            </div>
+      </section>
+
+      <!-- UI Simulator -->
+      <section id="screen-simulator" class="screen">
+        <div class="card">
+          <h2>Angle Rendering Simulator</h2>
+          <p>Test the cross-fade and parallax mechanics without a camera.</p>
+          
+          <div id="simStatus" class="checklist mt-16">
+             <div class="check-item ok" style="background: var(--status-good); color: #fff; padding: 10px; border-radius: 8px;">ALIGNED: Real Content Visible</div>
           </div>
-          <label>Question</label>
-          <textarea id="qText"></textarea>
-          <label>Options (one per line)</label>
-          <textarea id="qOptions"></textarea>
-          <label>Correct option index (0-3)</label>
-          <input id="qCorrect" type="number" min="0" max="3" value="0" />
-          <button id="qSave">Save question</button>
-          <div id="qMsg" class="muted"></div>
+
+          <div class="canvas-wrap" style="background: #fff; border: 4px solid var(--border-color); position: relative; height: 300px; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: #0f172a;">
+            <div id="simReal">How many moons does Mars have?</div>
+            <div id="simDecoy" style="position: absolute; opacity: 0; color: #64748b;">What is the capital of Japan?</div>
+          </div>
+
+          <div class="mt-16">
+            <label>Simulate Head Angle (-45° to 45°)</label>
+            <input type="range" id="simAngle" class="input" min="-45" max="45" value="0" style="margin-top: 10px;" />
+          </div>
         </div>
       </section>
 
+      <!-- Settings -->
       <section id="screen-settings" class="screen">
-        <div class="panel">
-          <h2>Settings</h2>
-          <div class="grid grid-2">
-            <div>
-              <label>Time limit per question (seconds)</label>
-              <input id="setTime" type="number" min="10" max="120" />
-            </div>
-            <div>
-              <label>Passing threshold (0 to 1)</label>
-              <input id="setPassing" type="number" step="0.01" min="0" max="1" />
-            </div>
-            <div>
-              <label>Head compliance threshold (0 to 1)</label>
-              <input id="setCompliance" type="number" step="0.01" min="0" max="1" />
-            </div>
-            <div>
-              <label>Auto-flag events (comma separated)</label>
-              <input id="setEvents" type="text" />
-            </div>
+        <div class="card">
+          <h2>System Configuration</h2>
+          <div class="mt-16">
+            <label>Inactivity Timeout (seconds)</label>
+            <input type="number" id="cfgTimeout" class="input" value="300" />
           </div>
-          <button id="saveSettings">Save settings</button>
-        </div>
-        <div class="panel">
-          <h2>Change Password</h2>
-          <label>Current password</label>
-          <input id="pwCurrent" type="password" />
-          <label>New password</label>
-          <input id="pwNew" type="password" />
-          <button id="pwSave">Update password</button>
-          <div id="pwMsg" class="muted"></div>
+          <div class="mt-16">
+            <label>Integrity Threshold (PASS/WARN)</label>
+            <input type="number" id="cfgThreshold" class="input" value="80" />
+          </div>
+          <button id="saveCfg" class="btn mt-16">Apply Settings</button>
         </div>
       </section>
     </main>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script>
+    /**
+     * 3D Ambi Admin Dashboard
+     * Proactive proctoring and content management.
+     */
     (() => {
-      const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
-      const loginScreen = document.getElementById("loginScreen");
-      const dashboard = document.getElementById("dashboard");
-      const loginBtn = document.getElementById("loginBtn");
-      const loginUser = document.getElementById("loginUser");
-      const loginPass = document.getElementById("loginPass");
-      const loginMsg = document.getElementById("loginMsg");
+      let state = { token: "", csrf: "", sessions: [], questions: [] };
 
-      const navButtons = document.querySelectorAll(".nav-btn");
-      const screens = {
-        sessions: document.getElementById("screen-sessions"),
-        questions: document.getElementById("screen-questions"),
-        questionBank: document.getElementById("screen-questionBank"),
-        testSets: document.getElementById("screen-testSets"),
-        mobile: document.getElementById("screen-mobile"),
-        settings: document.getElementById("screen-settings")
+      const DOM = {
+        login: { screen: document.getElementById('loginScreen'), user: document.getElementById('loginUser'), pass: document.getElementById('loginPass'), btn: document.getElementById('loginBtn'), msg: document.getElementById('loginMsg') },
+        dash: document.getElementById('dashboard'),
+        nav: document.querySelectorAll('.nav-btn'),
+        screens: { sessions: document.getElementById('screen-sessions'), questions: document.getElementById('screen-questions'), simulator: document.getElementById('screen-simulator'), settings: document.getElementById('screen-settings') },
+        sessionTable: document.getElementById('sessionsTable').querySelector('tbody'),
+        replay: { section: document.getElementById('replaySection'), timeline: document.getElementById('replayTimeline') },
+        sim: { angle: document.getElementById('simAngle'), real: document.getElementById('simReal'), decoy: document.getElementById('simDecoy'), status: document.getElementById('simStatus') }
       };
 
-      const sessionsTable = document.getElementById("sessionsTable").querySelector("tbody");
-      const exportSessionsBtn = document.getElementById("exportSessionsBtn");
-      const sessionSearch = document.getElementById("sessionSearch");
-      const sessionStatusFilter = document.getElementById("sessionStatusFilter");
-      const sessionIntegrityMin = document.getElementById("sessionIntegrityMin");
-      const sessionsPrevBtn = document.getElementById("sessionsPrevBtn");
-      const sessionsNextBtn = document.getElementById("sessionsNextBtn");
-      const sessionsPageText = document.getElementById("sessionsPageText");
-      const liveSessionsTable = document.getElementById("liveSessionsTable").querySelector("tbody");
-      const liveBadge = document.getElementById("liveBadge");
-      const sessionDetail = document.getElementById("sessionDetail");
-      const detailMeta = document.getElementById("detailMeta");
-      const detailIntegrity = document.getElementById("detailIntegrity");
-      const markCleared = document.getElementById("markCleared");
-      const markEscalated = document.getElementById("markEscalated");
-      const reviewMsg = document.getElementById("reviewMsg");
-      const answersTable = document.getElementById("answersTable").querySelector("tbody");
-      const eventsTable = document.getElementById("eventsTable").querySelector("tbody");
-      const sessionTimeline = document.getElementById("sessionTimeline");
-      const noteText = document.getElementById("noteText");
-      const saveNoteBtn = document.getElementById("saveNoteBtn");
-      const notesList = document.getElementById("notesList");
-      const questionsTable = document.getElementById("questionsTable").querySelector("tbody");
-      const questionDetail = document.getElementById("questionDetail");
-      const questionDetailBody = document.getElementById("questionDetailBody");
-      const questionSearch = document.getElementById("questionSearch");
-      const questionCategoryFilter = document.getElementById("questionCategoryFilter");
-      const questionDifficultyFilter = document.getElementById("questionDifficultyFilter");
-      const decoyHealthSummary = document.getElementById("decoyHealthSummary");
-      const decoyAuditTable = document.getElementById("decoyAuditTable").querySelector("tbody");
-      const testSetsTable = document.getElementById("testSetsTable").querySelector("tbody");
-      const setName = document.getElementById("setName");
-      const setDescription = document.getElementById("setDescription");
-      const setTimeOverride = document.getElementById("setTimeOverride");
-      const setPassingOverride = document.getElementById("setPassingOverride");
-      const setQuestionList = document.getElementById("setQuestionList");
-      const createSetBtn = document.getElementById("createSetBtn");
-      const setMsg = document.getElementById("setMsg");
-      const invitePanel = document.getElementById("invitePanel");
-      const inviteName = document.getElementById("inviteName");
-      const createInviteBtn = document.getElementById("createInviteBtn");
-      const inviteMsg = document.getElementById("inviteMsg");
-      const invitesTable = document.getElementById("invitesTable").querySelector("tbody");
-
-      const qSubject = document.getElementById("qSubject");
-      const qDifficulty = document.getElementById("qDifficulty");
-      const qText = document.getElementById("qText");
-      const qOptions = document.getElementById("qOptions");
-      const qCorrect = document.getElementById("qCorrect");
-      const qSave = document.getElementById("qSave");
-      const qMsg = document.getElementById("qMsg");
-
-      const setTime = document.getElementById("setTime");
-      const setPassing = document.getElementById("setPassing");
-      const setCompliance = document.getElementById("setCompliance");
-      const setEvents = document.getElementById("setEvents");
-      const saveSettings = document.getElementById("saveSettings");
-      const showMobileAccessBtn = document.getElementById("showMobileAccessBtn");
-      const mobileAccessUrl = document.getElementById("mobileAccessUrl");
-      const qrCode = document.getElementById("qrCode");
-
-      const pwCurrent = document.getElementById("pwCurrent");
-      const pwNew = document.getElementById("pwNew");
-      const pwSave = document.getElementById("pwSave");
-      const pwMsg = document.getElementById("pwMsg");
-
-      let adminToken = "";
-      let selectedSessionToken = "";
-      let allQuestions = [];
-      let selectedSetId = "";
-      let cachedSessions = [];
-      let sessionsPage = 1;
-      const SESSIONS_PAGE_SIZE = 20;
-
-      // Build authenticated request headers for admin API calls.
-      function authHeaders() {
-        return { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` };
-      }
-
-      // Escape untrusted text before inserting it into HTML.
-      function escapeHtml(value) {
-        return String(value).replace(/[&<>"']/g, (ch) => ({
-          "&": "&amp;",
-          "<": "&lt;",
-          ">": "&gt;",
-          "\"": "&quot;",
-          "'": "&#39;"
-        }[ch]));
-      }
-
-      // Render the colored integrity score badge.
-      function integrityBadge(score) {
-        const cls = score >= 80 ? "good" : score >= 50 ? "warn" : "bad";
-        return `<span class="integrity ${cls}">${score}</span>`;
-      }
-
-      // Render the decoy quality score badge.
-      function qualityBadge(score) {
-        const cls = score < 7 ? "quality-low" : "status-pill";
-        return `<span class="${cls}">Quality ${score}/10</span>`;
-      }
-
-      // Switch the active admin screen.
+      // --- Utilities ---
+      const headers = () => ({ "Content-Type": "application/json", "Authorization": `Bearer ${state.token}`, "X-CSRF-Token": state.csrf });
+      
       function showScreen(name) {
-        Object.values(screens).forEach((screen) => screen.classList.remove("active"));
-        screens[name].classList.add("active");
-        navButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.screen === name));
+        Object.values(DOM.screens).forEach(s => s.classList.remove('active'));
+        DOM.nav.forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+        DOM.screens[name].classList.add('active');
+        if (name === 'sessions') loadSessions();
+        if (name === 'questions') loadQuestions();
       }
 
-      navButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          showScreen(btn.dataset.screen);
-        });
-      });
-
-      // Show a table loading state with a spinner.
-      function showTableLoading(tbody, columns) {
-        tbody.innerHTML = `<tr class="loading-row"><td colspan="${columns}"><span class="spinner"></span>Loading...</td></tr>`;
-      }
-
-      // Sign in and load the dashboard data.
+      // --- Actions ---
       async function login() {
-        loginMsg.textContent = "";
-        const res = await fetch(`${API_BASE}/api/admin/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: loginUser.value.trim(),
-            password: loginPass.value
-          })
+        const res = await fetch('/api/admin/login', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ username: DOM.login.user.value, password: DOM.login.pass.value })
         });
-        if (!res.ok) {
-          loginMsg.textContent = "Login failed";
-          return;
-        }
-        const data = await res.json();
-        adminToken = data.token;
-        loginScreen.classList.add("is-hidden");
-        dashboard.classList.remove("is-hidden");
-        await refreshAll();
+        if (!res.ok) { DOM.login.msg.textContent = "Invalid credentials"; return; }
+        const d = await res.json();
+        state.token = d.token; state.csrf = d.csrfToken;
+        DOM.login.screen.classList.remove('active'); DOM.dash.classList.remove('is-hidden');
+        loadSessions();
       }
 
-      // Fetch all sessions for the sessions table.
       async function loadSessions() {
-        showTableLoading(sessionsTable, 5);
-        const res = await fetch(`${API_BASE}/api/admin/sessions`, { headers: authHeaders() });
-        cachedSessions = await res.json();
+        const res = await fetch('/api/admin/sessions', { headers: headers() });
+        state.sessions = await res.json();
         renderSessions();
       }
 
-      // Render filtered and paginated sessions.
       function renderSessions() {
-        const term = sessionSearch.value.trim().toLowerCase();
-        const status = sessionStatusFilter.value.trim().toLowerCase();
-        const minIntegrity = parseInt(sessionIntegrityMin.value || "0", 10);
-        const data = cachedSessions.filter((item) => {
-          return (!term || item.name.toLowerCase().includes(term))
-            && (!status || item.status.toLowerCase().includes(status))
-            && ((item.integrityScore || 0) >= minIntegrity);
-        });
-        const totalPages = Math.max(1, Math.ceil(data.length / SESSIONS_PAGE_SIZE));
-        sessionsPage = Math.min(Math.max(1, sessionsPage), totalPages);
-        const start = (sessionsPage - 1) * SESSIONS_PAGE_SIZE;
-        const pageItems = data.slice(start, start + SESSIONS_PAGE_SIZE);
-        sessionsTable.innerHTML = "";
-        pageItems.forEach((item) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${escapeHtml(item.name)}</td>
-            <td>${new Date(item.startedAt * 1000).toLocaleString()}</td>
-            <td>${Math.round(item.durationSec / 60)} min</td>
-            <td>${Math.round(item.score * 100)}%</td>
-            <td>${integrityBadge(item.integrityScore || 0)}</td>
-          `;
-          row.addEventListener("click", () => loadSessionDetail(item.token, item.name));
-          sessionsTable.appendChild(row);
-        });
-        if (!pageItems.length) {
-          sessionsTable.innerHTML = `<tr class="loading-row"><td colspan="5">No sessions found.</td></tr>`;
-        }
-        sessionsPageText.textContent = `Page ${sessionsPage} of ${totalPages}`;
-        sessionsPrevBtn.disabled = sessionsPage <= 1;
-        sessionsNextBtn.disabled = sessionsPage >= totalPages;
-      }
-
-      // Load answers, events, and review data for a selected session.
-      async function loadSessionDetail(token, name) {
-        selectedSessionToken = token;
-        reviewMsg.textContent = "";
-        const res = await fetch(`${API_BASE}/api/admin/session/${token}`, { headers: authHeaders() });
-        const data = await res.json();
-        sessionDetail.classList.remove("is-hidden");
-        detailMeta.textContent = `Candidate: ${name}`;
-        detailIntegrity.innerHTML = `Integrity Score: ${integrityBadge(data.integrityScore || 0)}`;
-        answersTable.innerHTML = "";
-        data.answers.forEach((ans) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${escapeHtml(ans.question)}</td>
-            <td>${escapeHtml(ans.answerIndex >= 0 ? ans.options[ans.answerIndex] : "No answer")}</td>
-            <td>${ans.correct ? "Yes" : "No"}</td>
-            <td>${Math.round(ans.timeMs / 1000)}s</td>
-            <td>${Math.round(ans.headCompliance * 100)}%</td>
-          `;
-          answersTable.appendChild(row);
-        });
-        eventsTable.innerHTML = "";
-        data.events.forEach((evt) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${escapeHtml(evt.type)}</td>
-            <td>${escapeHtml(evt.detail || "")}</td>
-            <td>${new Date(evt.createdAt * 1000).toLocaleString()}</td>
-          `;
-          eventsTable.appendChild(row);
-        });
-        sessionTimeline.innerHTML = "";
-        data.answers.forEach((ans, index) => {
-          const block = document.createElement("div");
-          const cls = ans.headCompliance >= 0.8 ? "timeline-good" : ans.headCompliance >= 0.6 ? "timeline-warn" : "timeline-bad";
-          block.className = `timeline-answer ${cls}`;
-          block.textContent = `Q${index + 1}`;
-          sessionTimeline.appendChild(block);
-        });
-        data.events.forEach((evt) => {
-          const tick = document.createElement("div");
-          tick.className = "timeline-event";
-          tick.textContent = evt.type;
-          sessionTimeline.appendChild(tick);
-        });
-        notesList.innerHTML = (data.notes || []).map((n) => `<div>${new Date(n.createdAt * 1000).toLocaleString()}: ${escapeHtml(n.note)}</div>`).join("");
-      }
-
-      // Refresh the live session counter and table.
-      async function loadLiveSessions() {
-        if (!adminToken) return;
-        const res = await fetch(`${API_BASE}/api/admin/live-sessions`, { headers: authHeaders() });
-        if (!res.ok) return;
-        const data = await res.json();
-        liveBadge.textContent = data.length.toString();
-        liveSessionsTable.innerHTML = "";
-        data.forEach((item) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `<td>${escapeHtml(item.name)}</td><td>${item.currentQuestion}</td><td>${Math.round(item.elapsedSec / 60)} min</td><td>${Math.round(item.headCompliance * 100)}%</td>`;
-          liveSessionsTable.appendChild(row);
+        DOM.sessionTable.innerHTML = '';
+        state.sessions.forEach(s => {
+          const r = document.createElement('tr');
+          const badge = s.integrity_score >= 80 ? 'pass' : (s.integrity_score >= 50 ? 'warn' : 'review');
+          r.innerHTML = `<td>${s.name}</td><td>${new Date(s.started_at*1000).toLocaleTimeString()}</td><td>${Math.round(s.durationSec/60)}m</td><td>${Math.round((s.score||0)*100)}%</td><td><span class="badge ${badge}">${badge.toUpperCase()}</span></td>`;
+          r.onclick = () => loadReplay(s.token);
+          DOM.sessionTable.appendChild(r);
         });
       }
 
-      // Load decoy audit rows for the question bank screen.
-      async function loadDecoyAudit() {
-        if (!adminToken) return;
-        const res = await fetch(`${API_BASE}/api/admin/decoy-audit`, { headers: authHeaders() });
-        if (!res.ok) return;
-        const data = await res.json();
-        const complete = data.filter((item) => item.status === "complete").length;
-        decoyHealthSummary.textContent = `${complete} complete, ${data.length - complete} incomplete`;
-        decoyAuditTable.innerHTML = "";
-        data.forEach((item) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${item.id}</td>
-            <td>${escapeHtml(item.question.slice(0, 60))}</td>
-            <td>${item.leftOk ? "✓" : "✗"}</td>
-            <td>${item.rightOk ? "✓" : "✗"}</td>
-            <td><button data-id="${item.id}">Regenerate</button></td>
-          `;
-          row.querySelector("button").addEventListener("click", async () => {
-            await fetch(`${API_BASE}/api/admin/question/${item.id}/regenerate-decoys`, {
-              method: "POST",
-              headers: authHeaders(),
-              body: "{}"
-            });
-            await loadDecoyAudit();
-            await loadQuestions();
-          });
-          decoyAuditTable.appendChild(row);
-        });
+      async function loadReplay(token) {
+        const res = await fetch(`/api/admin/session/${token}`, { headers: headers() });
+        const d = await res.json();
+        DOM.replay.section.classList.remove('is-hidden');
+        DOM.replay.timeline.innerHTML = d.events.map(e => `
+          <div class="check-item ${e.type === 'inactivity_timeout' ? 'error-text' : ''}">
+            <b>${new Date(e.created_at*1000).toLocaleTimeString()}</b> — ${e.type}: ${e.detail || ''}
+          </div>
+        `).join('');
       }
 
-      // Fetch all questions for the admin questions table.
       async function loadQuestions() {
-        showTableLoading(questionsTable, 4);
-        const res = await fetch(`${API_BASE}/api/admin/questions`, { headers: authHeaders() });
-        const data = await res.json();
-        allQuestions = data;
-        renderSetQuestionList();
-        renderQuestions();
+        const res = await fetch('/api/admin/questions', { headers: headers() });
+        state.questions = await res.json();
+        const tbody = document.getElementById('questionsTable').querySelector('tbody');
+        tbody.innerHTML = state.questions.map(q => `
+          <tr><td>${q.id}</td><td>${q.subject}</td><td>${q.question.slice(0,50)}...</td><td>✅ High</td><td><button class="nav-btn" style="color:var(--accent-color)">Edit</button></td></tr>
+        `).join('');
       }
 
-      // Render filtered questions and attach detail handlers.
-      function renderQuestions() {
-        const term = questionSearch.value.trim().toLowerCase();
-        const category = questionCategoryFilter.value.trim().toLowerCase();
-        const difficulty = questionDifficultyFilter.value.trim().toLowerCase();
-        questionsTable.innerHTML = "";
-        const data = allQuestions.filter((q) => {
-          return (!term || q.question.toLowerCase().includes(term))
-            && (!category || q.subject.toLowerCase().includes(category))
-            && (!difficulty || q.difficulty.toLowerCase().includes(difficulty));
-        });
-        data.forEach((q) => {
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${q.id}</td>
-            <td>${escapeHtml(q.subject)}</td>
-            <td>${escapeHtml(q.difficulty)}</td>
-            <td>${escapeHtml(q.question)}</td>
-          `;
-          row.addEventListener("click", () => {
-            questionDetail.classList.remove("is-hidden");
-            questionDetailBody.innerHTML = `
-              <div><strong>Question:</strong> ${escapeHtml(q.question)}</div>
-              <div><strong>Options:</strong> ${escapeHtml(q.options.join(" | "))}</div>
-              <div><strong>Correct:</strong> ${escapeHtml(q.options[q.correctIndex] || "")}</div>
-              <div><strong>Decoy Left:</strong> ${escapeHtml(q.decoyLeft.question)} ${qualityBadge(q.decoyLeft.quality || 8)}</div>
-              <div><strong>Decoy Left Options:</strong> ${escapeHtml(q.decoyLeft.options.join(" | "))}</div>
-              <div><strong>Decoy Right:</strong> ${escapeHtml(q.decoyRight.question)} ${qualityBadge(q.decoyRight.quality || 8)}</div>
-              <div><strong>Decoy Right Options:</strong> ${escapeHtml(q.decoyRight.options.join(" | "))}</div>
-              <button data-regenerate="${q.id}" class="mt-10">Regenerate decoys</button>
-            `;
-            questionDetailBody.querySelector("button").addEventListener("click", () => regenerateDecoys(q.id));
-          });
-          questionsTable.appendChild(row);
-        });
-      }
+      // --- Simulator Engine ---
+      DOM.sim.angle.oninput = (e) => {
+        const a = Math.abs(e.target.value);
+        const b = Math.min(1, Math.max(0, (a - 12) / 10));
+        DOM.sim.real.style.opacity = 1 - b;
+        DOM.sim.decoy.style.opacity = b;
+        DOM.sim.decoy.style.transform = `translateX(${e.target.value * 0.5}px)`;
+        const ok = a <= 15;
+        DOM.sim.status.querySelector('.check-item').style.background = ok ? 'var(--status-good)' : 'var(--status-bad)';
+        DOM.sim.status.querySelector('.check-item').textContent = ok ? 'ALIGNED: Real Content Visible' : 'OUT OF ZONE: Decoy Active';
+      };
 
-      // Regenerate decoys for one question.
-      async function regenerateDecoys(questionId) {
-        await fetch(`${API_BASE}/api/admin/question/regenerate-decoys`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ questionId })
-        });
-        await loadQuestions();
-      }
-
-      // Save a manually entered question.
-      async function saveQuestion() {
-        const options = qOptions.value.split("\n").map((line) => line.trim()).filter(Boolean);
-        if (options.length !== 4) {
-          qMsg.textContent = "Provide exactly four options.";
-          return;
-        }
-        const payload = {
-          subject: qSubject.value.trim() || "general",
-          difficulty: qDifficulty.value.trim() || "medium",
-          question: qText.value.trim(),
-          options,
-          correctIndex: parseInt(qCorrect.value, 10)
-        };
-        const res = await fetch(`${API_BASE}/api/admin/question`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          qMsg.textContent = "Save failed";
-          return;
-        }
-        qMsg.textContent = "Saved";
-        qText.value = "";
-        qOptions.value = "";
-        await loadQuestions();
-      }
-
-      // Load persisted test and review settings.
-      async function loadSettings() {
-        const res = await fetch(`${API_BASE}/api/admin/settings`, { headers: authHeaders() });
-        const data = await res.json();
-        setTime.value = data.timeLimit;
-        setPassing.value = data.passingThreshold;
-        setCompliance.value = data.headComplianceThreshold;
-        setEvents.value = data.autoFlagEvents.join(", ");
-      }
-
-      // Save updated test and review settings.
-      async function saveSettingsClick() {
-        const payload = {
-          timeLimit: parseInt(setTime.value, 10),
-          passingThreshold: parseFloat(setPassing.value),
-          headComplianceThreshold: parseFloat(setCompliance.value),
-          autoFlagEvents: setEvents.value.split(",").map((s) => s.trim()).filter(Boolean)
-        };
-        await fetch(`${API_BASE}/api/admin/settings`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify(payload)
-        });
-      }
-
-      // Change the admin password.
-      async function updatePassword() {
-        pwMsg.textContent = "";
-        const res = await fetch(`${API_BASE}/api/admin/password`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            currentPassword: pwCurrent.value,
-            newPassword: pwNew.value
-          })
-        });
-        if (!res.ok) {
-          pwMsg.textContent = "Update failed";
-          return;
-        }
-        pwMsg.textContent = "Updated";
-        pwCurrent.value = "";
-        pwNew.value = "";
-      }
-
-      // Refresh all dashboard data after login.
-      async function refreshAll() {
-        await loadSessions();
-        await loadLiveSessions();
-        await loadQuestions();
-        await loadDecoyAudit();
-        await loadTestSets();
-        await loadSettings();
-      }
-
-      // Render question checkboxes for test-set creation.
-      function renderSetQuestionList() {
-        setQuestionList.innerHTML = "";
-        allQuestions.forEach((q) => {
-          const label = document.createElement("label");
-          label.innerHTML = `<input type="checkbox" value="${q.id}" /> <span>${escapeHtml(q.question)}</span>`;
-          setQuestionList.appendChild(label);
-        });
-      }
-
-      // Create a named test set from selected questions.
-      async function createTestSet() {
-        const questionIds = Array.from(setQuestionList.querySelectorAll("input:checked")).map((input) => parseInt(input.value, 10));
-        const res = await fetch(`${API_BASE}/api/admin/test-set`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            name: setName.value.trim(),
-            description: setDescription.value.trim(),
-            questionIds,
-            timeLimitOverride: setTimeOverride.value ? parseInt(setTimeOverride.value, 10) : null,
-            passingThresholdOverride: setPassingOverride.value ? parseFloat(setPassingOverride.value) : null
-          })
-        });
-        setMsg.textContent = res.ok ? "Created" : "Create failed";
-        if (res.ok) {
-          setName.value = "";
-          setDescription.value = "";
-          setTimeOverride.value = "";
-          setPassingOverride.value = "";
-          setQuestionList.querySelectorAll("input").forEach((input) => { input.checked = false; });
-          await loadTestSets();
-        }
-      }
-
-      // Load test sets and invite metadata.
-      async function loadTestSets() {
-        testSetsTable.innerHTML = "";
-        const res = await fetch(`${API_BASE}/api/admin/test-sets`, { headers: authHeaders() });
-        const data = await res.json();
-        data.forEach((set) => {
-          const link = `${location.origin}/test?set=${set.id}`;
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${escapeHtml(set.name)}</td>
-            <td>${set.questionIds.length}</td>
-            <td><input value="${link}" readonly /></td>
-            <td><button data-set="${set.id}">Invite</button></td>
-          `;
-          row.querySelector("button").addEventListener("click", () => showInvites(set));
-          testSetsTable.appendChild(row);
-        });
-      }
-
-      // Show invite controls for a selected test set.
-      function showInvites(set) {
-        selectedSetId = set.id;
-        invitePanel.classList.remove("is-hidden");
-        renderInvites(set.invites || []);
-      }
-
-      // Render invite rows for a selected set.
-      function renderInvites(invites) {
-        invitesTable.innerHTML = "";
-        invites.forEach((invite) => {
-          const link = `${location.origin}/test?invite=${invite.token}`;
-          const row = document.createElement("tr");
-          row.innerHTML = `
-            <td>${escapeHtml(invite.candidateName)}</td>
-            <td>${escapeHtml(invite.status)}</td>
-            <td>${Math.round((invite.score || 0) * 100)}%</td>
-            <td><input value="${link}" readonly /></td>
-          `;
-          invitesTable.appendChild(row);
-        });
-      }
-
-      // Create a candidate invite link.
-      async function createInvite() {
-        const res = await fetch(`${API_BASE}/api/admin/invite`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ setId: selectedSetId, candidateName: inviteName.value.trim() || "Candidate" })
-        });
-        inviteMsg.textContent = res.ok ? "Invite created" : "Invite failed";
-        inviteName.value = "";
-        await loadTestSets();
-      }
-
-      // Save the manual review status for a session.
-      async function setReviewStatus(status) {
-        if (!selectedSessionToken) {
-          return;
-        }
-        const res = await fetch(`${API_BASE}/api/admin/session/review`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ token: selectedSessionToken, status })
-        });
-        if (!res.ok) {
-          reviewMsg.textContent = "Update failed";
-          return;
-        }
-        reviewMsg.textContent = "Updated";
-        await loadSessions();
-      }
-
-      // Save an admin note on the selected session.
-      async function saveNote() {
-        if (!selectedSessionToken || !noteText.value.trim()) return;
-        await fetch(`${API_BASE}/api/admin/session/note`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ token: selectedSessionToken, note: noteText.value.trim() })
-        });
-        noteText.value = "";
-        await loadSessionDetail(selectedSessionToken, detailMeta.textContent.replace("Candidate: ", ""));
-      }
-
-      // Download completed sessions as CSV.
-      async function exportSessions() {
-        const res = await fetch(`${API_BASE}/api/admin/sessions/export`, { headers: authHeaders() });
-        if (!res.ok) {
-          return;
-        }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "completed-sessions.csv";
-        link.click();
-        URL.revokeObjectURL(url);
-      }
-
-      // Show a local-network test URL and QR code.
-      async function showMobileAccess() {
-        const res = await fetch(`${API_BASE}/api/local-access`);
-        const data = await res.json();
-        mobileAccessUrl.textContent = data.url;
-        qrCode.innerHTML = "";
-        if (window.QRCode) {
-          new QRCode(qrCode, { text: data.url, width: 180, height: 180 });
-        }
-      }
-
-      loginBtn.addEventListener("click", login);
-      sessionSearch.addEventListener("input", () => {
-        sessionsPage = 1;
-        renderSessions();
-      });
-      sessionStatusFilter.addEventListener("input", () => {
-        sessionsPage = 1;
-        renderSessions();
-      });
-      sessionIntegrityMin.addEventListener("input", () => {
-        sessionsPage = 1;
-        renderSessions();
-      });
-      sessionsPrevBtn.addEventListener("click", () => {
-        sessionsPage -= 1;
-        renderSessions();
-      });
-      sessionsNextBtn.addEventListener("click", () => {
-        sessionsPage += 1;
-        renderSessions();
-      });
-      saveNoteBtn.addEventListener("click", saveNote);
-      questionSearch.addEventListener("input", renderQuestions);
-      questionCategoryFilter.addEventListener("input", renderQuestions);
-      questionDifficultyFilter.addEventListener("input", renderQuestions);
-      qSave.addEventListener("click", saveQuestion);
-      createSetBtn.addEventListener("click", createTestSet);
-      createInviteBtn.addEventListener("click", createInvite);
-      exportSessionsBtn.addEventListener("click", exportSessions);
-      showMobileAccessBtn.addEventListener("click", showMobileAccess);
-      saveSettings.addEventListener("click", saveSettingsClick);
-      pwSave.addEventListener("click", updatePassword);
-      markCleared.addEventListener("click", () => setReviewStatus("cleared"));
-      markEscalated.addEventListener("click", () => {
-        if (window.confirm("Are you sure you want to mark this session escalated?")) {
-          setReviewStatus("escalated");
-        }
-      });
-      setInterval(loadLiveSessions, 10000);
+      // --- Event Listeners ---
+      DOM.login.btn.onclick = login;
+      DOM.nav.forEach(b => b.onclick = () => showScreen(b.dataset.screen));
+      document.getElementById('exportCsv').onclick = () => window.location.href = `/api/admin/sessions/export?token=${state.token}`;
     })();
   </script>
 </body>

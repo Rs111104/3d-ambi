@@ -1,114 +1,91 @@
-# 3d-ambi
+# 3D Ambi: Biometric Angle-Dependent Assessment
 
-Anti-cheat online test system that uses face tracking and angle-dependent WebGL rendering to show real questions only to the candidate sitting straight.
+[![Security Hardened](https://img.shields.io/badge/Security-Hardened-success.svg)](#-security-architecture)
+[![CI Pipeline](https://github.com/Rs111104/3d-ambigram/actions/workflows/ci.yml/badge.svg)](https://github.com/Rs111104/3d-ambigram/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## How It Works
+**3D Ambi** is a high-integrity proctoring solution that uses computer vision to ensure test content is only visible to the authorized candidate. By tracking head orientation in real-time, it dynamically cross-fades real questions into plausible decoys for side-viewers or unauthorized captures.
 
-The candidate's webcam estimates whether they are facing the screen directly. When they sit straight, the canvas shows the real question. When someone views from the side, the canvas blends into a decoy question. The page also records review signals such as tab switches, missing face detection, right-click attempts, screen-capture attempts, and suspicious stillness. Webcam analysis runs in the browser and video is not uploaded.
+---
 
-## Folder Structure
+## 🚀 The Excellence Pass
 
-```text
-3d-ambi/
-├── frontend/
-│   ├── index.html
-│   ├── admin.html
-│   └── styles.css
-├── backend/
-│   ├── server.py
-│   └── requirements.txt
-├── .gitignore
-└── README.md
+This project demonstrates a production-grade implementation of computer vision and browser-based security:
+- **Smooth Mechanics:** WebGL shaders provide ultra-smooth, parallax transitions.
+- **Robust Tracking:** MediaPipe Face Mesh handles low light and biometric baselining.
+- **Airtight Security:** AES-GCM encrypted delivery + HMAC-SHA256 rendering proofs.
+- **Proctoring Suite:** Real-time monitoring, session replay, and forensic timelines.
+
+---
+
+## 🛠️ System Architecture
+
+The system is built with a decoupled, modular architecture designed for scalability and security.
+
+```mermaid
+graph TD
+    subgraph Frontend (Vanilla JS + WebGL)
+        C[Candidate Client] -->|Face Tracking| CV[MediaPipe]
+        C -->|Secure Render| GL[WebGL Engine]
+        C -->|Decrypt| WC[Web Crypto API]
+    end
+    
+    subgraph Backend (Python)
+        S[Threaded Server] -->|Middleware| A[Auth & CSRF]
+        S -->|Business Logic| L[Logic & Crypto]
+        L -->|Persistence| DB[(SQLite)]
+        S -->|Real-time| SSE[SSE Stream]
+    end
+    
+    C <-->|Encrypted JSON| S
 ```
 
-## Setup
+---
 
-```bash
-git clone <your-repo-url>
-cd 3d-ambi/backend
-pip install -r requirements.txt
-python server.py
-```
+## 🛡️ Security Architecture
 
-Candidate page:
+1.  **Encrypted Data Pipeline:** Questions are encrypted on-the-fly using **AES-256-GCM**. The decryption key is derived from the session token using an HKDF-like construction and exists only in the client's volatile memory.
+2.  **Cryptographic Proof of Rendering:** Every answer must be accompanied by an **HMAC-SHA256 signature**. This signature can only be generated if the client is currently rendering the correct question at the authorized viewing angle.
+3.  **Proctoring Integrity:** Real-time behavioral signals (tab switches, face loss, inactivity) are streamed to the admin dashboard via **Server-Sent Events (SSE)**.
 
-```text
-http://127.0.0.1:8080/test
-```
+---
 
-Admin page:
+## 📱 Features & UX
 
-```text
-http://127.0.0.1:8080/admin
-```
+### Candidate Interface
+- **Biometric Checklist:** Pre-test verification of camera, lighting, and face detection.
+- **Dark Mode Support:** Native OS theme detection for reduced eye strain.
+- **Keyboard Accessible:** Full ARIA compliance and keyboard navigation support.
 
-## Environment Variables
+### Admin Command Center
+- **Question Management:** Full CRUD interface for managing assessment content.
+- **Angle Simulator:** Visual testing tool for simulating rendering mechanics without a camera.
+- **Forensic Replay:** Scrub through a candidate's behavioral timeline with millisecond precision.
 
-| Variable | Required | Description |
-|---|---:|---|
-| `LLM_API_KEY` | No | API key used for generated decoy questions when enabled. |
-| `ADMIN_USER` | Yes | Admin dashboard username. |
-| `ADMIN_PASSWORD` | Yes | Admin dashboard password. |
-| `PORT` | No | Server port. Defaults to `8080`. |
+---
 
-Warning: set `ADMIN_USER` and `ADMIN_PASSWORD` before going live.
+## 🏁 Quick Start
 
-## Deployment On Render
+1.  **Clone & Install:**
+    ```bash
+    git clone https://github.com/Rs111104/3d-ambigram.git
+    cd 3d-ambigram
+    pip install cryptography python-dotenv
+    ```
+2.  **Setup & Seed:**
+    ```bash
+    python setup.py
+    ```
+3.  **Launch:**
+    ```bash
+    python backend/server.py
+    ```
 
-1. Create a free account on Render.
-2. Click New Web Service.
-3. Connect your GitHub account and pick this repository.
-4. Set the start command to `python backend/server.py`.
-5. Set the region closest to your candidates.
-6. Add a service name and click Create Web Service.
-7. When the service is live, open the public Render URL and confirm the candidate page loads.
-8. Open the same URL with `/admin` at the end to reach the admin page.
-9. Add `LLM_API_KEY` if you want generated decoys.
-10. Set `ADMIN_USER` and `ADMIN_PASSWORD` before sharing the admin page.
+---
 
-## Security Notes
+## 🤝 Contributing
 
-Question text is delivered as plain JSON over HTTPS and rendered into a canvas rather than normal page text. The system blocks embedding, rate-limits session endpoints, records suspicious behavior, and keeps webcam analysis on the candidate device. No video is uploaded. Review signals are stored as events so administrators can audit sessions after completion.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for architectural guidelines and coding standards.
 
-## Self-Directed Excellence (process templates)
-
-We use a compact improvement and decision workflow to run biweekly experiments, capture decisions, and keep changes reversible.
-
-- Framework checklist: [SELF-DIRECTED-EXCELLENCE.md](SELF-DIRECTED-EXCELLENCE.md)
-- Two-week sprint template: [TWO-WEEK-IMPROVEMENT.md](TWO-WEEK-IMPROVEMENT.md)
-- Decision log & ADR: [DECISION-LOG-ADR.md](DECISION-LOG-ADR.md)
-- PR template: [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
-
-Create a new sprint file from the template:
-
-```bash
-python scripts/new_sprint.py --title "Sprint name"
-```
-
-Sprint files are stored under the `sprints/` folder.
-
-## Deployment
-
-The project includes a Dockerfile and a `docker-compose.yml` for local deployment, and a GitHub Actions workflow that builds and pushes a Docker image to GitHub Container Registry (GHCR).
-
-Local run with Docker Compose:
-
-```bash
-docker compose build
-docker compose up -d
-```
-
-Build and run locally without Docker Compose:
-
-```bash
-docker build -t 3d-ambi:local .
-docker run -p 8080:8080 3d-ambi:local
-```
-
-CI: The workflow `.github/workflows/ci-build-push.yml` builds and pushes the image to `ghcr.io/<org>/3d-ambi:latest` on pushes to `main`. To enable pushing to GHCR, the workflow uses the `GITHUB_TOKEN` with `packages: write` permission.
-
-Optional: Deploy to Render
-
-- Create a Render web service and point it at the repository, or configure Render to pull your container image from GHCR.
-- To enable CI-triggered Render deployments, add a deploy step to the workflow and set `RENDER_API_KEY` and `RENDER_SERVICE_ID` as repository secrets.
-
+---
+*Developed as a showcase of browser-based security and computer vision integration.*

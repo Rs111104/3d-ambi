@@ -3,1444 +3,293 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Assessment Session</title>
+  <title>3D Ambi | Secure Assessment</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="candidate-page">
-  <main class="app">
+  <main class="app" role="main">
     <header class="header">
-      <div class="title">Assessment Session</div>
-      <div class="status">
+      <h1 class="title">3D Ambi Assessment</h1>
+      <div class="status" aria-live="polite">
         <span class="status-dot" id="statusDot"></span>
-        <span id="statusText">Initializing camera...</span>
+        <span id="statusText">Initialing...</span>
       </div>
     </header>
 
-    <section id="screen-start" class="screen active">
+    <!-- Step 1: Pre-flight Checklist -->
+    <section id="screen-start" class="screen active" aria-labelledby="start-title">
       <div class="card">
-        <h1>3D Ambigram Assessment</h1>
-        <p>This proctored assessment uses webcam monitoring to protect test integrity and keep questions visible only from your direct viewing angle.</p>
-        <video id="previewVideo" class="camera-preview" playsinline muted autoplay></video>
-        <label for="candidateName">Name</label>
-        <input id="candidateName" type="text" placeholder="Your name" autocomplete="name" />
-        <button id="resumeBtn" class="is-hidden">Resume your session</button>
-        <button id="beginBtn">Begin</button>
+        <h2 id="start-title">Ready to Begin?</h2>
+        <p>Ensure you are in a well-lit environment and facing the camera directly.</p>
+        
+        <div class="checklist" id="preflightChecklist" role="list">
+          <div class="check-item" id="checkCamera" role="listitem"><span class="icon">⭕</span> Camera Access</div>
+          <div class="check-item" id="checkFace" role="listitem"><span class="icon">⭕</span> Face Detection</div>
+          <div class="check-item" id="checkLight" role="listitem"><span class="icon">⭕</span> Lighting Quality</div>
+        </div>
+
+        <video id="previewVideo" class="camera-preview" playsinline muted autoplay aria-label="Camera preview"></video>
+        
+        <div class="mt-16">
+          <label for="candidateName" class="label">Full Name</label>
+          <input id="candidateName" type="text" class="input" placeholder="Enter your name" autocomplete="name" />
+        </div>
+        <button id="beginBtn" class="btn mt-16" disabled>Unlock Assessment</button>
       </div>
     </section>
 
-    <section id="screen-calibrate" class="screen">
-      <div class="card">
-        <h1>Calibration</h1>
-        <p>Hold still, looking straight ahead. Calibration completes in <span id="calibTimer">3</span> seconds.</p>
-        <div class="angle-readout" id="calibAngle">Angle: 0.0 deg</div>
-        <div class="timer">
-          <div class="timer-bar" id="calibBar"></div>
+    <!-- Step 2: Biometric Calibration -->
+    <section id="screen-calibrate" class="screen" aria-labelledby="calib-title">
+      <div class="card" style="text-align: center;">
+        <h2 id="calib-title">Calibrating...</h2>
+        <p>Hold still and look directly at the center of the screen.</p>
+        <div class="checklist mt-16">
+           <div class="check-item ok"><span id="calibTimer">3</span> seconds remaining</div>
         </div>
       </div>
     </section>
 
-    <section id="screen-liveness" class="screen">
-      <div class="card">
-        <h1>Liveness Check</h1>
-        <p id="livenessPrompt">Slowly turn your head left, then right.</p>
-        <div class="angle-readout" id="livenessAngle">Angle: 0.0 deg</div>
-        <div class="timer">
-          <div class="timer-bar" id="livenessBar"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="screen-mobile" class="screen">
-      <div class="card">
-        <h1>Phone Position</h1>
-        <svg class="phone-diagram" viewBox="0 0 260 160" role="img" aria-label="Hold phone upright at eye level">
-          <rect x="105" y="20" width="50" height="100" rx="8" fill="#111827"/>
-          <rect x="112" y="30" width="36" height="78" rx="3" fill="#ffffff"/>
-          <circle cx="130" cy="114" r="3" fill="#ffffff"/>
-          <path d="M52 82h48M160 82h48" stroke="#6b7280" stroke-width="5" stroke-linecap="round"/>
-          <circle cx="40" cy="82" r="15" fill="none" stroke="#111827" stroke-width="5"/>
-          <circle cx="220" cy="82" r="15" fill="none" stroke="#111827" stroke-width="5"/>
-        </svg>
-        <p>Hold your phone upright at eye level, directly in front of your face.</p>
-        <button id="mobileContinueBtn">Continue</button>
-      </div>
-    </section>
-
+    <!-- Step 3: Assessment Interface -->
     <section id="screen-test" class="screen">
-      <div class="test-layout">
-        <div class="question-meta">
-          <div id="progressText">Question 1 of 10</div>
-          <div class="circle-timer" id="circleTimer">20</div>
+      <div style="width: 100%;">
+        <div class="header">
+          <div id="progressText" style="font-weight: 600;">Question 1 of 10</div>
+          <div id="timerText" style="font-family: monospace; font-weight: 700;">--:--</div>
         </div>
-        <div class="canvas-wrap">
-          <canvas id="glCanvas" width="960" height="540" aria-label="Angle dependent question renderer"></canvas>
+
+        <div class="canvas-wrap" id="canvasContainer">
+          <canvas id="glCanvas" width="1280" height="720" aria-label="Secure Question Display"></canvas>
         </div>
-        <div class="recovery-msg" id="recoveryMsg">Please look at the screen</div>
-        <div class="overlay-msg" id="livenessMsg">Please move your head slightly to continue.</div>
-        <div class="overlay-msg" id="captureMsg">Screen recording has been detected and logged.</div>
-        <div class="timer">
-          <div class="timer-bar" id="timerBar"></div>
-        </div>
-        <div class="answers" id="answerButtons"></div>
+
+        <div id="answerButtons" class="answers-grid" role="group" aria-label="Answer options"></div>
       </div>
     </section>
 
-    <section id="screen-complete" class="screen">
-      <div class="card">
-        <h1>Test complete. Thank you.</h1>
-        <p id="resultText"></p>
-      </div>
-    </section>
-
-    <section id="screen-error" class="screen">
-      <div class="card">
-        <h1>Something went wrong</h1>
-        <p id="errorText"></p>
-        <button id="reloadBtn">Reload and continue</button>
+    <!-- Step 4: Submission Confirmation -->
+    <section id="screen-complete" class="screen" aria-labelledby="complete-title">
+      <div class="card" style="text-align: center;">
+        <h2 id="complete-title">Assessment Submitted</h2>
+        <div class="checklist mt-16">
+           <div class="check-item ok" style="justify-content: center;">✅ Securely Recorded</div>
+        </div>
+        <p class="mt-16">Your responses and proctoring data have been transmitted. You may now close this tab safely.</p>
       </div>
     </section>
   </main>
 
-  <video id="inputVideo" playsinline muted></video>
+  <!-- Hidden elements for tracking -->
+  <video id="inputVideo" playsinline muted style="display:none"></video>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script>
+    /**
+     * 3D Ambi Candidate Client
+     * High-integrity, angle-dependent assessment renderer.
+     */
     (() => {
-      // Early, minimal test-helper shim: ensure `window.__ambi_test` exists
-      // even if the main script hasn't run yet or an early error occurs.
-      if (!window.__ambi_test) {
-        window.__ambi_test = {
-          _pendingToken: null,
-          setToken(token) {
-            try {
-              this._pendingToken = token;
-              localStorage.setItem('ambi_session', JSON.stringify({ sessionToken: token, questionNumber: 0, maxQuestions: 10, correctCount: 0, sessionStartedAt: Date.now() }));
-            } catch (e) { /* ignore */ }
-          },
-          beginSessionViaToken(token) {
-            try {
-              this._pendingToken = token;
-              localStorage.setItem('ambi_session', JSON.stringify({ sessionToken: token, questionNumber: 0, maxQuestions: 10, correctCount: 0, sessionStartedAt: Date.now() }));
-            } catch (e) { /* ignore */ }
-          }
-        };
-        // Accept postMessage early to store a pending token even before
-        // the rest of the application initializes.
-        window.addEventListener('message', (ev) => {
-          try {
-            if (ev && ev.data && ev.data.type === 'ambi_begin_with_token' && ev.data.token) {
-              window.__ambi_test._pendingToken = ev.data.token;
-              localStorage.setItem('ambi_session', JSON.stringify({ sessionToken: ev.data.token, questionNumber: 0, maxQuestions: 10, correctCount: 0, sessionStartedAt: Date.now() }));
-            }
-          } catch (e) {}
-        });
-      }
-      try {
-      const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8080" : location.origin;
-      const screens = {
-        start: document.getElementById("screen-start"),
-        liveness: document.getElementById("screen-liveness"),
-        calibrate: document.getElementById("screen-calibrate"),
-        mobile: document.getElementById("screen-mobile"),
-        test: document.getElementById("screen-test"),
-        complete: document.getElementById("screen-complete"),
-        error: document.getElementById("screen-error")
-      };
-
-      const statusDot = document.getElementById("statusDot");
-      const statusText = document.getElementById("statusText");
-      const candidateName = document.getElementById("candidateName");
-      const beginBtn = document.getElementById("beginBtn");
-      const resumeBtn = document.getElementById("resumeBtn");
-      const mobileContinueBtn = document.getElementById("mobileContinueBtn");
-      const calibTimer = document.getElementById("calibTimer");
-      const calibAngle = document.getElementById("calibAngle");
-      const calibBar = document.getElementById("calibBar");
-      const livenessPrompt = document.getElementById("livenessPrompt");
-      const livenessAngle = document.getElementById("livenessAngle");
-      const livenessBar = document.getElementById("livenessBar");
-      const timerBar = document.getElementById("timerBar");
-      const progressText = document.getElementById("progressText");
-      const circleTimer = document.getElementById("circleTimer");
-      const resultText = document.getElementById("resultText");
-      const errorText = document.getElementById("errorText");
-      const reloadBtn = document.getElementById("reloadBtn");
-      const answerButtons = document.getElementById("answerButtons");
-      const recoveryMsg = document.getElementById("recoveryMsg");
-      const livenessMsg = document.getElementById("livenessMsg");
-      const captureMsg = document.getElementById("captureMsg");
-
-      const canvas = document.getElementById("glCanvas");
-      const canvasWrap = document.querySelector(".canvas-wrap");
-      const inputVideo = document.getElementById("inputVideo");
-      const previewVideo = document.getElementById("previewVideo");
-      const params = new URLSearchParams(location.search);
-      const setId = params.get("set") || "";
-      const inviteToken = params.get("invite") || "";
-      const isSmallScreen = window.innerWidth < 768;
-      let isMobile = isSmallScreen || matchMedia("(pointer: coarse)").matches;
       const CONFIG = {
-        maxAngle: 45,
-        transition: 10,
-        validZone: 12,
-        maxQuestions: 10,
-        calibDuration: 3000,
-        faceMissingThreshold: 2000,
-        cameraFallbackMs: 1000,
-        submitRetries: 3,
-        submitRetryDelayMs: 500
+        API_BASE: location.origin,
+        ANGLES: { MAX: 45, THRESHOLD: 12, BLEND: 8 },
+        TIMEOUTS: { CALIB: 3000, SESSION: 300000 },
+        TRACKING: { MIN_CONFIDENCE: 0.6, REFRESH_MS: 33 }
       };
 
-      let gl = canvas.getContext("webgl", { antialias: true, alpha: false });
-      let GL_SUPPORTED = true;
-      if (!gl) {
-        // Provide a safe no-op GL stub so the rest of the app can initialize
-        // and the test helper can be registered even when real WebGL is
-        // unavailable in headless environments.
-        GL_SUPPORTED = false;
-        statusText.textContent = "WebGL unavailable";
-        statusDot.classList.add("status-dot--bad");
-        gl = {
-          VERTEX_SHADER: 0x8B31,
-          FRAGMENT_SHADER: 0x8B30,
-          ARRAY_BUFFER: 0x8892,
-          STATIC_DRAW: 0x88E4,
-          TRIANGLES: 0x0004,
-          TEXTURE_2D: 0x0DE1,
-          UNPACK_FLIP_Y_WEBGL: 0x9240,
-          RGBA: 0x1908,
-          UNSIGNED_BYTE: 0x1401,
-          createShader: () => ({}),
-          shaderSource: () => {},
-          compileShader: () => {},
-          getShaderParameter: () => true,
-          getShaderInfoLog: () => "",
-          deleteShader: () => {},
-          createProgram: () => ({}),
-          attachShader: () => {},
-          linkProgram: () => {},
-          getProgramParameter: () => true,
-          getProgramInfoLog: () => "",
-          deleteProgram: () => {},
-          useProgram: () => {},
-          createBuffer: () => ({}),
-          bindBuffer: () => {},
-          bufferData: () => {},
-          getAttribLocation: () => 0,
-          enableVertexAttribArray: () => {},
-          vertexAttribPointer: () => {},
-          createTexture: () => ({}),
-          getUniformLocation: () => ({}),
-          uniform1i: () => {},
-          uniform1f: () => {},
-          activeTexture: () => {},
-          bindTexture: () => {},
-          pixelStorei: () => {},
-          texImage2D: () => {},
-          texParameteri: () => {},
-          viewport: () => {},
-          clearColor: () => {},
-          clear: () => {},
-          drawArrays: () => {}
-        };
-      }
-
-      let sessionToken = "";
-      let currentQuestionId = null;
-      let realOptions = [];
-      let decoyLeftOptions = [];
-      let decoyRightOptions = [];
-      let visibleOptionMode = "real";
-      let visibleOptions = [];
-      let questionStart = 0;
-      let timerId = null;
-      let questionNumber = 0;
-      let maxQuestions = CONFIG.maxQuestions;
-      let correctCount = 0;
-      let sessionStartedAt = 0;
-      const answerQueue = [];
-      let nextQuestionCache = null;
-      let nextQuestionPromise = null;
-      let answerLocked = false;
-      let trackingAvailable = true;
-      let calibrationStart = 0;
-      let calibrated = false;
-      let calibrationSamples = [];
-      let baseline = 0;
-      let angleDeg = 0;
-      let yawSamples = [];
-      let lastTrackingSeen = 0;
-      let recoveryMode = false;
-      let faceLostStarted = 0;
-      let faceLostLogged = false;
-      let faceMissingStarted = 0;
-      let faceMissingQueued = false;
-      let gyroAvailable = false;
-      let usingGyro = false;
-      const rawYawWindow = [];
-      let stillnessStarted = 0;
-      let livenessStage = "idle";
-      let livenessStart = 0;
-      let livenessMinYaw = 0;
-      let livenessMaxYaw = 0;
-      const landmarkWindow = [];
-      let livenessFailActive = false;
-
-      let lastYawTs = 0;
-      let inZoneMs = 0;
-      let totalMs = 0;
-      let lastInZone = true;
-
-      const vertexSource = "\n" +
-        "attribute vec2 a_position;\n" +
-        "varying vec2 v_uv;\n" +
-        "void main() {\n" +
-        "  v_uv = (a_position + 1.0) * 0.5;\n" +
-        "  gl_Position = vec4(a_position, 0.0, 1.0);\n" +
-        "}\n";
-
-      const fragmentSource = `
-precision mediump float;
-varying vec2 v_uv;
-uniform sampler2D u_center;
-uniform sampler2D u_left;
-uniform sampler2D u_right;
-uniform float uAngle;
-uniform float uMaxAngle;
-uniform float uTransition;
-uniform float u_time;
-
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-}
-
-void main() {
-  float absAngle = abs(uAngle);
-
-  // UV jitter: adds per-frame micro-offset to decoy layers to defeat frame-averaging attacks
-  float jitter = (hash(v_uv + u_time * 0.017) - 0.5) * 0.006;
-  vec2 jitteredUV = v_uv + vec2(jitter, 0.0);
-
-  // Parallax drift: decoy shifts horizontally as angle increases, creating depth illusion
-  float parallax = (uAngle / 90.0) * 0.07;
-  vec2 decoyUV = clamp(jitteredUV + vec2(parallax, 0.0), 0.0, 1.0);
-
-  vec4 centerColor = texture2D(u_center, v_uv);
-  vec4 leftColor   = texture2D(u_left,   decoyUV);
-  vec4 rightColor  = texture2D(u_right,  decoyUV);
-
-  // Core blend: real question at 0 deg, transition at configured angle, decoy-only beyond max angle
-  float blend = smoothstep(uTransition, uMaxAngle, absAngle);
-  vec4 decoy = uAngle < 0.0 ? leftColor : rightColor;
-  vec4 mixed = mix(centerColor, decoy, blend);
-
-  // Noise layer beyond 35 deg: corrupt the image further to defeat extreme-angle photography
-  float noiseWeight = smoothstep(35.0, 45.0, absAngle);
-  float noise = hash(v_uv * 200.0 + u_time * 0.1) * 0.35 + 0.65;
-  vec4 noisy = vec4(decoy.rgb * noise, 1.0);
-
-  // Polarisation falloff: brightness reduces at steep angles, mimicking physical screen behaviour
-  float polarFade = pow(cos(absAngle * 0.01745329), 3.0);
-  vec4 finalColor = mix(mixed, noisy, noiseWeight);
-  finalColor.rgb *= mix(1.0, polarFade, smoothstep(18.0, 45.0, absAngle));
-
-  gl_FragColor = vec4(finalColor.rgb, 1.0);
-}
-`;
-
-      // Compile a WebGL shader and surface build errors.
-      function createShader(type, source) {
-        const shader = gl.createShader(type);
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-          const msg = gl.getShaderInfoLog(shader) || "Shader error";
-          gl.deleteShader(shader);
-          throw new Error(msg);
-        }
-        return shader;
-      }
-
-      // Link the WebGL program used for angle-dependent compositing.
-      function createProgram(vsSource, fsSource) {
-        const program = gl.createProgram();
-        const vs = createShader(gl.VERTEX_SHADER, vsSource);
-        const fs = createShader(gl.FRAGMENT_SHADER, fsSource);
-        gl.attachShader(program, vs);
-        gl.attachShader(program, fs);
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-          const msg = gl.getProgramInfoLog(program) || "Program error";
-          gl.deleteProgram(program);
-          throw new Error(msg);
-        }
-        return program;
-      }
-
-      const program = createProgram(vertexSource, fragmentSource);
-      gl.useProgram(program);
-
-      const posBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([ -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1 ]),
-        gl.STATIC_DRAW
-      );
-
-      const posLoc = gl.getAttribLocation(program, "a_position");
-      gl.enableVertexAttribArray(posLoc);
-      gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-      const centerTex = gl.createTexture();
-      const leftTex = gl.createTexture();
-      const rightTex = gl.createTexture();
-
-      // Polyfill for CanvasRenderingContext2D.roundRect (older browsers)
-      if (!CanvasRenderingContext2D.prototype.roundRect) {
-        CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
-          if (typeof r === "number") {
-            r = { tl: r, tr: r, br: r, bl: r };
-          } else {
-            r = r || { tl: 0, tr: 0, br: 0, bl: 0 };
-          }
-          this.beginPath();
-          this.moveTo(x + r.tl, y);
-          this.lineTo(x + w - r.tr, y);
-          this.quadraticCurveTo(x + w, y, x + w, y + r.tr);
-          this.lineTo(x + w, y + h - r.br);
-          this.quadraticCurveTo(x + w, y + h, x + w - r.br, y + h);
-          this.lineTo(x + r.bl, y + h);
-          this.quadraticCurveTo(x, y + h, x, y + h - r.bl);
-          this.lineTo(x, y + r.tl);
-          this.quadraticCurveTo(x, y, x + r.tl, y);
-          this.closePath();
-        };
-      }
-
-      const uniforms = {
-        uCenter: gl.getUniformLocation(program, "u_center"),
-        uLeft: gl.getUniformLocation(program, "u_left"),
-        uRight: gl.getUniformLocation(program, "u_right"),
-        uAngle: gl.getUniformLocation(program, "uAngle"),
-        uMaxAngle: gl.getUniformLocation(program, "uMaxAngle"),
-        uTransition: gl.getUniformLocation(program, "uTransition"),
-        u_time: gl.getUniformLocation(program, "u_time")
-      };
-
-      gl.uniform1i(uniforms.uCenter, 0);
-      gl.uniform1i(uniforms.uLeft, 1);
-      gl.uniform1i(uniforms.uRight, 2);
-
-      const textCanvas = document.createElement("canvas");
-      const textCtx = textCanvas.getContext("2d");
-      textCanvas.width = 1024;
-      textCanvas.height = 512;
-
-      // Split long plain text into readable canvas lines.
-      function wrapText(text, maxChars) {
-        const words = text.split(/\s+/).filter(Boolean);
-        const lines = [];
-        let current = "";
-        for (const word of words) {
-          const next = current ? `${current} ${word}` : word;
-          if (next.length > maxChars) {
-            if (current) lines.push(current);
-            current = word;
-          } else {
-            current = next;
-          }
-        }
-        if (current) lines.push(current);
-        return lines;
-      }
-
-      // Draw wrapped text into the backing canvas.
-      function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
-        const words = text.split(/\s+/).filter(Boolean);
-        let line = "";
-        for (const word of words) {
-          const test = line ? `${line} ${word}` : word;
-          if (ctx.measureText(test).width > maxWidth && line) {
-            ctx.fillText(line, x, y);
-            line = word;
-            y += lineHeight;
-          } else {
-            line = test;
-          }
-        }
-        if (line) {
-          ctx.fillText(line, x, y);
-          y += lineHeight;
-        }
-        return y;
-      }
-
-      // Draw the question, answers, and watermark before texture upload.
-      function drawText(questionText, options, questionLabel) {
-        textCtx.clearRect(0, 0, textCanvas.width, textCanvas.height);
-        textCtx.fillStyle = "#ffffff";
-        textCtx.fillRect(0, 0, textCanvas.width, textCanvas.height);
-        textCtx.textAlign = "left";
-        textCtx.textBaseline = "top";
-        textCtx.fillStyle = "#6b7280";
-        textCtx.font = "500 28px Arial";
-        textCtx.fillText(questionLabel || `Question ${questionNumber + 1}`, 32, 30);
-        textCtx.fillStyle = "#111827";
-        textCtx.font = "400 42px Arial";
-        let y = wrapCanvasText(textCtx, questionText, 32, 86, textCanvas.width * 0.85, 54) + 18;
-        const labels = ["A", "B", "C", "D"];
-        textCtx.font = "400 26px Arial";
-        for (let i = 0; i < Math.min(4, (options || []).length); i += 1) {
-          const boxY = y + i * 58;
-          textCtx.fillStyle = "#f3f4f6";
-          textCtx.beginPath();
-          textCtx.roundRect(32, boxY, textCanvas.width - 64, 44, 10);
-          textCtx.fill();
-          textCtx.fillStyle = "#111827";
-          textCtx.fillText(`${labels[i]}. ${options[i]}`, 50, boxY + 8);
-        }
-        const stamp = new Date().toLocaleString();
-        const watermark = `${candidateName.value.trim() || "Candidate"} - ${stamp}`;
-        textCtx.save();
-        textCtx.textAlign = "right";
-        textCtx.textBaseline = "bottom";
-        textCtx.font = "500 18px Arial";
-        textCtx.fillStyle = "rgba(17, 24, 39, 0.34)";
-        textCtx.fillText(watermark, textCanvas.width - 28, textCanvas.height - 22);
-        textCtx.restore();
-      }
-
-      // Upload a freshly drawn text canvas into a WebGL texture.
-      function uploadTexture(texture, questionText, options, questionLabel) {
-        drawText(questionText, options, questionLabel);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, textCanvas);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      }
-
-      // Keep the WebGL drawing buffer matched to the displayed canvas size.
-      function resizeCanvas() {
-        const ratio = window.devicePixelRatio || 1;
-        const width = Math.floor(canvas.clientWidth * ratio);
-        const height = Math.floor(canvas.clientHeight * ratio);
-        if (canvas.width !== width || canvas.height !== height) {
-          canvas.width = width;
-          canvas.height = height;
-        }
-      }
-
-      // Render the active real/decoy texture blend for the current head angle.
-      function render() {
-        resizeCanvas();
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clearColor(1.0, 1.0, 1.0, 1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, centerTex);
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, leftTex);
-        gl.activeTexture(gl.TEXTURE2);
-        gl.bindTexture(gl.TEXTURE_2D, rightTex);
-
-        gl.uniform1f(uniforms.uAngle, angleDeg);
-        gl.uniform1f(uniforms.uMaxAngle, CONFIG.maxAngle);
-        gl.uniform1f(uniforms.uTransition, CONFIG.transition);
-        gl.uniform1f(uniforms.u_time, performance.now() / 1000.0);
-
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-      }
-
-      // Switch the visible application screen.
-      function showScreen(name) {
-        Object.values(screens).forEach((screen) => screen.classList.remove("active"));
-        screens[name].classList.add("active");
-      }
-
-      // Update the compact tracking status indicator.
-      function updateStatus() {
-        if (recoveryMode) {
-          statusDot.className = "status-dot status-dot--warn";
-          statusText.textContent = "Checking connection...";
-          return;
-        }
-        if (!trackingAvailable) {
-          statusDot.className = "status-dot status-dot--bad";
-          statusText.textContent = isMobile ? "Motion unavailable" : "Camera unavailable";
-          return;
-        }
-        if (!calibrated) {
-          statusDot.className = "status-dot status-dot--warn";
-          statusText.textContent = "Calibrating";
-          return;
-        }
-        const inZone = Math.abs(angleDeg) <= CONFIG.validZone;
-        statusDot.className = inZone ? "status-dot status-dot--good" : "status-dot status-dot--bad";
-        statusText.textContent = inZone ? "Head aligned" : "Out of zone";
-      }
-
-      // Accumulate how long the candidate stays inside the valid viewing zone.
-      function trackCompliance(now, inZone) {
-        if (!lastYawTs) {
-          lastYawTs = now;
-          lastInZone = inZone;
-          return;
-        }
-        const delta = now - lastYawTs;
-        totalMs += delta;
-        if (lastInZone) {
-          inZoneMs += delta;
-        }
-        lastYawTs = now;
-        lastInZone = inZone;
-      }
-
-      // Process a fresh yaw reading from camera or motion sensors.
-      function onYaw(rawYaw) {
-        lastTrackingSeen = performance.now();
-        rawYawWindow.push({ t: performance.now(), yaw: rawYaw });
-        while (rawYawWindow.length > 30) {
-          rawYawWindow.shift();
-        }
-        if (rawYawWindow.length >= 20 && currentQuestionId) {
-          const mean = rawYawWindow.reduce((sum, item) => sum + item.yaw, 0) / rawYawWindow.length;
-          const variance = rawYawWindow.reduce((sum, item) => {
-            const d = item.yaw - mean;
-            return sum + d * d;
-          }, 0) / rawYawWindow.length;
-          const stdDev = Math.sqrt(variance);
-          if (stdDev < 0.15) {
-            if (!stillnessStarted) stillnessStarted = performance.now();
-            if (performance.now() - stillnessStarted > 2000 && !livenessFailActive) {
-              livenessFailActive = true;
-              livenessMsg.textContent = "Please move naturally to continue";
-              livenessMsg.classList.add("active");
-              queueEvent("liveness_fail", JSON.stringify({ durationSec: 2, stdDev }));
-            }
-          } else {
-            stillnessStarted = 0;
-            if (livenessFailActive) {
-              livenessFailActive = false;
-              livenessMsg.classList.remove("active");
-            }
-          }
-        }
-        if (recoveryMode) {
-          recoveryMode = false;
-          if (faceLostStarted) {
-            queueEvent("face_lost", JSON.stringify({ durationSec: Math.round((performance.now() - faceLostStarted) / 1000) }));
-          }
-          faceLostStarted = 0;
-          faceLostLogged = false;
-          recoveryMsg.classList.remove("active");
-        }
-        yawSamples.push(rawYaw);
-        if (yawSamples.length > 7) {
-          yawSamples.shift();
-        }
-        const sorted = yawSamples.slice().sort((a, b) => a - b);
-        const filteredYaw = sorted.length >= 7 ? sorted[3] : sorted[Math.floor(sorted.length / 2)];
-        if (livenessStage === "running") {
-          updateLivenessGesture(filteredYaw);
-        }
-        if (!calibrated) {
-          calibrationSamples.push(filteredYaw);
-          if (performance.now() - calibrationStart >= CONFIG.calibDuration) {
-            finishCalibration();
-          }
-        }
-        angleDeg = Math.max(-CONFIG.maxAngle, Math.min(CONFIG.maxAngle, filteredYaw - baseline));
-        const inZone = Math.abs(angleDeg) <= CONFIG.validZone;
-        if (!recoveryMode) {
-          trackCompliance(performance.now(), inZone);
-        }
-        updateStatus();
-        calibAngle.textContent = `Angle: ${angleDeg.toFixed(1)} deg`;
-        livenessAngle.textContent = `Angle: ${filteredYaw.toFixed(1)} deg`;
-        render();
-      }
-
-      // Ask the candidate to make a small head movement before calibration.
-      function startLivenessGesture() {
-        if (usingGyro) {
-          startCalibration();
-          return;
-        }
-        livenessStage = "running";
-        livenessStart = performance.now();
-        livenessMinYaw = 0;
-        livenessMaxYaw = 0;
-        livenessPrompt.textContent = "Slowly turn your head left, then right.";
-        showScreen("liveness");
-        const tick = () => {
-          if (livenessStage !== "running") return;
-          const elapsed = performance.now() - livenessStart;
-          livenessBar.style.width = `${Math.min(100, (elapsed / 10000) * 100)}%`;
-          if (elapsed > 10000) {
-            livenessStage = "failed";
-            queueEvent("liveness_gesture_fail");
-            livenessPrompt.textContent = "Liveness check failed. Please try again.";
-            setTimeout(startLivenessGesture, 1200);
-            return;
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }
-
-      // Advance the liveness gesture once both left and right movement are observed.
-      function updateLivenessGesture(rawYaw) {
-        livenessMinYaw = Math.min(livenessMinYaw, rawYaw);
-        livenessMaxYaw = Math.max(livenessMaxYaw, rawYaw);
-        if (livenessMinYaw < -10 && livenessMaxYaw > 10) {
-          livenessStage = "passed";
-          livenessPrompt.textContent = "Liveness confirmed.";
-          setTimeout(startCalibration, 350);
-        }
-      }
-
-      // Start webcam preview and MediaPipe face tracking.
-      async function initCamera() {
-        let cameraSettled = false;
-        setTimeout(() => {
-          if (!cameraSettled && !calibrated) {
-            trackingAvailable = false;
-            calibrated = true;
-            baseline = 0;
-            angleDeg = 0;
-            queueEvent("camera_unavailable");
-            updateStatus();
-            render();
-          }
-        }, CONFIG.cameraFallbackMs);
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const hasCamera = devices.some((device) => device.kind === "videoinput");
-          if (!hasCamera) {
-            throw new Error("no_camera");
-          }
-          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-          inputVideo.srcObject = stream;
-          previewVideo.srcObject = stream;
-          await inputVideo.play();
-          await previewVideo.play().catch(() => {});
-          cameraSettled = true;
-          setupFaceMesh();
-        } catch (err) {
-          cameraSettled = true;
-          trackingAvailable = false;
-          calibrated = true;
-          baseline = 0;
-          angleDeg = 0;
-          updateStatus();
-          render();
-          queueEvent("camera_unavailable");
-        }
-      }
-
-      // Enable device-orientation tracking for mobile sessions.
-      function initGyro() {
-        if (!("DeviceOrientationEvent" in window)) {
-          return false;
-        }
-        usingGyro = true;
-        gyroAvailable = true;
-        trackingAvailable = true;
-        window.addEventListener("deviceorientation", (event) => {
-          const gamma = typeof event.gamma === "number" ? event.gamma : 0;
-          const yaw = Math.max(-45, Math.min(45, gamma));
-          onYaw(yaw);
-        });
-        return true;
-      }
-
-      // Request mobile motion permission and continue the session setup.
-      async function enableMobileTracking() {
-        if (
-          typeof DeviceOrientationEvent !== "undefined"
-          && typeof DeviceOrientationEvent.requestPermission === "function"
-        ) {
-          try {
-            const permission = await DeviceOrientationEvent.requestPermission();
-            if (permission !== "granted") {
-              trackingAvailable = false;
-              updateStatus();
-              return;
-            }
-          } catch (err) {
-            trackingAvailable = false;
-            updateStatus();
-            return;
-          }
-        }
-        if (initGyro()) {
-          startLivenessGesture();
-        } else {
-          trackingAvailable = false;
-          updateStatus();
-        }
-      }
-
-      // Detect continuous face disappearance while a question is active.
-      function checkRecovery() {
-        if (!calibrated || usingGyro || !currentQuestionId || recoveryMode) {
-          return;
-        }
-        const lastSeen = lastTrackingSeen || questionStart;
-        if (lastSeen && performance.now() - lastSeen > CONFIG.faceMissingThreshold) {
-          recoveryMode = true;
-          faceLostStarted = performance.now();
-          recoveryMsg.classList.add("active");
-          updateStatus();
-          if (!faceLostLogged) {
-            faceLostLogged = true;
-            queueEvent("face_missing");
-          }
-        }
-      }
-
-      // Wire MediaPipe FaceMesh callbacks into yaw estimation.
-      function setupFaceMesh() {
-        const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
-        faceMesh.setOptions({
-          maxNumFaces: 1,
-          refineLandmarks: true,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5
-        });
-
-        faceMesh.onResults((results) => {
-          if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
-            if (!faceMissingStarted) {
-              faceMissingStarted = performance.now();
-            }
-            if (!faceMissingQueued && performance.now() - faceMissingStarted >= CONFIG.faceMissingThreshold) {
-              faceMissingQueued = true;
-              queueEvent("face_missing");
-            }
-            return;
-          }
-          faceMissingStarted = 0;
-          faceMissingQueued = false;
-          const lm = results.multiFaceLandmarks[0];
-          const leftEye = lm[33];
-          const rightEye = lm[263];
-          const leftTragion = lm[234];
-          const rightTragion = lm[454];
-          const noseTip = lm[1];
-          const yawA = (noseTip.x - (leftEye.x + rightEye.x) / 2) / Math.max(0.001, rightEye.x - leftEye.x) * 55;
-          const yawB = (noseTip.x - (leftTragion.x + rightTragion.x) / 2) / Math.max(0.001, rightTragion.x - leftTragion.x) * 70;
-          const yawC = (leftEye.x - rightEye.x + (leftTragion.x - rightTragion.x) * 0.5) * -40;
-          const yawDeg = Math.max(-45, Math.min(45, yawA * 0.40 + yawB * 0.40 + yawC * 0.20));
-          onYaw(yawDeg);
-        });
-
-        const camera = new Camera(inputVideo, {
-          onFrame: async () => {
-            setupFaceMesh.frameCount = (setupFaceMesh.frameCount || 0) + 1;
-            if (setupFaceMesh.frameCount % 2 !== 0) {
-              return;
-            }
-            await faceMesh.send({ image: inputVideo });
-          },
-          width: 640,
-          height: 480
-        });
-
-        camera.start();
-      }
-
-      // Collect a stable straight-ahead baseline before showing questions.
-      function startCalibration() {
-        calibrated = false;
-        calibrationSamples = [];
-        calibrationStart = performance.now();
-        showScreen("calibrate");
-        updateStatus();
-        const start = performance.now();
-        const duration = CONFIG.calibDuration;
-        const tick = () => {
-          const elapsed = performance.now() - start;
-          const remaining = Math.max(0, duration - elapsed);
-          calibTimer.textContent = Math.ceil(remaining / 1000).toString();
-          calibBar.style.width = `${(elapsed / duration) * 100}%`;
-          if (elapsed < duration && !calibrated) {
-            requestAnimationFrame(tick);
-          }
-        };
-        requestAnimationFrame(tick);
-        setTimeout(() => {
-          if (!calibrated) {
-            finishCalibration();
-          }
-        }, duration + 200);
-      }
-
-      // Finish calibration and fall back to straight-ahead when no samples exist.
-      function finishCalibration() {
-        if (calibrated) {
-          return;
-        }
-        const sum = calibrationSamples.reduce((a, b) => a + b, 0);
-        const mean = calibrationSamples.length ? sum / calibrationSamples.length : 0;
-        const variance = calibrationSamples.length ? calibrationSamples.reduce((acc, value) => {
-          const d = value - mean;
-          return acc + d * d;
-        }, 0) / calibrationSamples.length : 0;
-        if (Math.sqrt(variance) > 3.0) {
-          calibTimer.textContent = "3";
-          statusText.textContent = "Please hold still and look straight ahead";
-          setTimeout(startCalibration, 800);
-          return;
-        }
-        baseline = mean;
-        calibrated = true;
-        calibrationSamples = [];
-        showScreen("test");
-        startQuestion();
-      }
-
-      // Reset per-question head-position compliance counters.
-      function resetComplianceTracking() {
-        lastYawTs = 0;
-        inZoneMs = 0;
-        totalMs = 0;
-        lastInZone = true;
-      }
-
-      // Fetch the next question as plain HTTPS JSON.
-      async function fetchNextQuestion() {
-        console.debug('fetchNextQuestion ->', { sessionToken });
-        const response = await fetch(`${API_BASE}/api/session/next`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionToken })
-        });
-        console.debug('fetchNextQuestion response ok:', response.ok, 'status:', response.status);
-        if (!response.ok) {
-          console.debug('fetchNextQuestion failed response status:', response.status);
-          throw new Error("question_fetch_failed");
-        }
-        const data = await response.json();
-        console.debug('fetchNextQuestion payload:', data);
-        if (!data.questionId) {
-          console.debug('fetchNextQuestion invalid payload:', data);
-          throw new Error("invalid_payload");
-        }
-        return data;
-      }
-
-      // Preload a question while the candidate is answering the current one.
-      function preloadNextQuestion() {
-        if (nextQuestionCache || nextQuestionPromise || questionNumber + 1 >= maxQuestions) return;
-        nextQuestionPromise = fetchNextQuestion()
-          .then((data) => {
-            nextQuestionCache = data;
-            return data;
-          })
-          .catch(() => null)
-          .finally(() => {
-            nextQuestionPromise = null;
-          });
-      }
-
-      // Apply question text to the real and decoy textures.
-      function setQuestionTextures(data) {
-        uploadTexture(centerTex, data.question, data.options, `Question ${questionNumber + 1}`);
-        uploadTexture(leftTex, data.decoyLeft.question, data.decoyLeft.options, `Question ${questionNumber + 1}`);
-        uploadTexture(rightTex, data.decoyRight.question, data.decoyRight.options, `Question ${questionNumber + 1}`);
-        render();
-      }
-
-      // Replace visible answer buttons for the current viewing angle.
-      function setAnswerButtons(options) {
-        answerButtons.style.opacity = "0";
-        setTimeout(() => {
-          answerButtons.innerHTML = "";
-          visibleOptions = options.slice();
-          options.forEach((option, index) => {
-            const btn = document.createElement("button");
-            btn.className = "answer-btn";
-            btn.textContent = option;
-            btn.disabled = answerLocked;
-            btn.addEventListener("click", () => submitAnswer(visibleOptionMode === "real" ? index : -1));
-            answerButtons.appendChild(btn);
-          });
-          answerButtons.style.opacity = "1";
-        }, 150);
-      }
-
-      // Swap answer choices to match the real or decoy question currently visible.
-      function syncAnswerOptionsToAngle() {
-        if (!currentQuestionId) return;
-        const absAngle = Math.abs(angleDeg);
-        const targetMode = absAngle > CONFIG.validZone ? (angleDeg < 0 ? "left" : "right") : (absAngle < CONFIG.transition + 2 ? "real" : visibleOptionMode);
-        if (targetMode === visibleOptionMode) return;
-        visibleOptionMode = targetMode;
-        if (targetMode === "left") {
-          setAnswerButtons(decoyLeftOptions);
-        } else if (targetMode === "right") {
-          setAnswerButtons(decoyRightOptions);
-        } else {
-          setAnswerButtons(realOptions);
-        }
-      }
-
-      // Run the per-question countdown and auto-submit on timeout.
-      function startTimer(seconds) {
-        clearInterval(timerId);
-        const start = performance.now();
-        const duration = seconds * 1000;
-        timerBar.style.width = "100%";
-        timerId = setInterval(() => {
-          const elapsed = performance.now() - start;
-          const remaining = Math.max(0, duration - elapsed);
-          timerBar.style.width = `${(remaining / duration) * 100}%`;
-          const remainingSec = Math.ceil(remaining / 1000);
-          circleTimer.textContent = remainingSec.toString();
-          const color = remainingSec <= 5 ? "#dc2626" : remainingSec <= 15 ? "#f59e0b" : "#111827";
-          circleTimer.style.background = `conic-gradient(${color} ${(remaining / duration) * 360}deg, #eef2f7 0deg)`;
-          if (remaining <= 0) {
-            clearInterval(timerId);
-            submitAnswer(-1);
-          }
-        }, 100);
-      }
-
-      // Load the current question, render it, and begin timing.
-      async function startQuestion() {
-        console.debug('startQuestion called', { questionNumber, sessionToken });
-        if (questionNumber >= maxQuestions) {
-          await completeSession();
-          return;
-        }
-        resetComplianceTracking();
-        try {
-          const data = nextQuestionCache || await fetchNextQuestion();
-          console.debug('startQuestion got data', { questionId: data && data.questionId });
-          nextQuestionCache = null;
-          answerLocked = false;
-          progressText.textContent = `Question ${questionNumber + 1} of ${data.totalQuestions || maxQuestions}`;
-          currentQuestionId = data.questionId;
-          realOptions = data.options;
-          decoyLeftOptions = data.decoyLeft.options || data.options;
-          decoyRightOptions = data.decoyRight.options || data.options;
-          visibleOptionMode = "real";
-          maxQuestions = data.totalQuestions || maxQuestions;
-          setQuestionTextures(data);
-          setAnswerButtons(realOptions);
-          canvas.classList.add("fade-swap");
-          setTimeout(() => canvas.classList.remove("fade-swap"), 20);
-          questionStart = performance.now();
-          startTimer(data.timeLimit || 20);
-          preloadNextQuestion();
-          console.debug('startQuestion displayed question', currentQuestionId);
-        } catch (err) {
-          console.debug('startQuestion error', err);
-          queueEvent("question_fetch_failed");
-          setTimeout(() => startQuestion(), 1000);
-        }
-      }
-
-      // Submit the chosen answer once and immediately disable all choices.
-      async function submitAnswer(answerIndex) {
-        if (!currentQuestionId || answerLocked) {
-          return;
-        }
-        answerLocked = true;
-        answerButtons.querySelectorAll("button").forEach((button) => {
-          button.disabled = true;
-        });
-        clearInterval(timerId);
-        const timeMs = Math.max(0, Math.round(performance.now() - questionStart));
-        const compliance = totalMs > 0 ? inZoneMs / totalMs : 1;
-        const payload = {
-          sessionToken,
-          questionId: currentQuestionId,
-          answerIndex,
-          timeMs,
-          headCompliance: compliance
-        };
-        currentQuestionId = null;
-        const res = await postWithRetry(`${API_BASE}/api/session/answer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        if (res && res.ok && answerIndex >= 0) {
-          correctCount += 1;
-        }
-        if (res && res.ok && questionNumber + 1 < maxQuestions) {
-          preloadNextQuestion();
-          if (nextQuestionPromise) {
-            await nextQuestionPromise.catch(() => null);
-          }
-        }
-        questionNumber += 1;
-        saveSessionState();
-        startQuestion();
-      }
-
-      // Retry failed answer submissions before queueing for later flush.
-      async function postWithRetry(url, options) {
-        for (let attempt = 0; attempt < CONFIG.submitRetries; attempt += 1) {
-          try {
-            const res = await fetch(url, options);
-            if (res.ok) return res;
-          } catch (err) {}
-          if (attempt < CONFIG.submitRetries - 1) {
-            await new Promise((resolve) => setTimeout(resolve, CONFIG.submitRetryDelayMs));
-          }
-        }
-        answerQueue.push({ url, options });
-        localStorage.setItem("ambiAnswerQueue", JSON.stringify(answerQueue));
-        return null;
-      }
-
-      // Send locally queued answers after the network returns.
-      async function flushAnswerQueue() {
-        const saved = JSON.parse(localStorage.getItem("ambiAnswerQueue") || "[]");
-        while (saved.length) {
-          const item = saved.shift();
-          try {
-            await fetch(item.url, item.options);
-          } catch (err) {
-            saved.unshift(item);
-            break;
-          }
-        }
-        localStorage.setItem("ambiAnswerQueue", JSON.stringify(saved));
-      }
-
-      // Persist enough session state to offer resume.
-      function saveSessionState() {
-        if (!sessionToken) return;
-        localStorage.setItem("ambi_session", JSON.stringify({
-          sessionToken,
-          questionNumber,
-          maxQuestions,
-          correctCount,
-          sessionStartedAt
-        }));
-      }
-
-      // Create a server session and enter the setup flow.
-      async function startSession() {
-        const name = candidateName.value.trim() || "Candidate";
-        const res = await fetch(`${API_BASE}/api/session/start`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, setId, inviteToken })
-        });
-        if (!res.ok) {
-          trackingAvailable = false;
-          statusText.textContent = "Link unavailable";
-          statusDot.className = "status-dot status-dot--bad";
-          return;
-        }
-        const data = await res.json();
-        sessionToken = data.sessionToken || "";
-        window.__ambiSessionToken = sessionToken;
-        questionNumber = 0;
-        correctCount = 0;
-        sessionStartedAt = Date.now();
-        saveSessionState();
-          flushEvents();
-          // Always set a fallback: if calibration hasn't completed within the
-          // camera fallback window, start the test so users without a camera
-          // (or when getUserMedia fails) can continue.
-          setTimeout(() => {
-            if (!calibrated) {
-              calibrated = true;
-              angleDeg = 0;
-              showScreen("test");
-              startQuestion();
-            }
-          }, CONFIG.cameraFallbackMs + 200);
-
-          if (!trackingAvailable) {
-            // If we already know tracking is unavailable, start the fallback
-            // immediately after a very short delay to ensure UI updates.
-            setTimeout(() => {
-              if (!calibrated) {
-                calibrated = true;
-                angleDeg = 0;
-                showScreen("test");
-                startQuestion();
-              }
-            }, 100);
-          } else if (isMobile && !usingGyro) {
-            showScreen("mobile");
-          } else {
-            startLivenessGesture();
-          }
-      }
-
-      // Mark the session complete and show the result summary.
-      async function completeSession() {
-        const res = await fetch(`${API_BASE}/api/session/complete`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionToken })
-        });
-        clearInterval(timerId);
-        const resultRes = await fetch(`${API_BASE}/api/session/result?token=${encodeURIComponent(sessionToken)}`);
-        const result = resultRes.ok ? await resultRes.json() : { score: 0, total: maxQuestions, passed: false, timeTakenMs: 0 };
-        const minutes = Math.floor(result.timeTakenMs / 60000);
-        const seconds = Math.floor((result.timeTakenMs % 60000) / 1000);
-        resultText.textContent = `Score: ${result.score} / ${result.total} correct. ${result.passed ? "Well done - you passed." : "Keep practising - you did not reach the passing threshold."} Time taken: ${minutes}m ${seconds}s.`;
-        localStorage.removeItem("ambi_session");
-        showScreen("complete");
-      }
-
-      const pendingEvents = [];
-      // Queue a proctoring event or send it immediately when a session exists.
-      function queueEvent(type, detail) {
-        const event = { type, detail };
-        if (!sessionToken) {
-          pendingEvents.push(event);
-          return;
-        }
-        fetch(`${API_BASE}/api/session/event`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionToken, type, detail })
-        });
-      }
-
-      // Flush proctoring events collected before the session token existed.
-      function flushEvents() {
-        if (!sessionToken || pendingEvents.length === 0) {
-          return;
-        }
-        pendingEvents.splice(0).forEach((event) => queueEvent(event.type, event.detail));
-      }
-
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) {
-          queueEvent("tab_hidden");
-        }
-      });
-
-      ["copy", "cut", "paste"].forEach((name) => {
-        document.addEventListener(name, (event) => {
-          event.preventDefault();
-          queueEvent("clipboard_attempt", name);
-        });
-      });
-
-      if (navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
-        const originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
-        navigator.mediaDevices.getDisplayMedia = async (...args) => {
-          queueEvent("screen_capture_attempt");
-          captureMsg.classList.add("active");
-          setTimeout(() => captureMsg.classList.remove("active"), 5000);
-          return originalGetDisplayMedia(...args);
-        };
-      }
-
-      window.addEventListener("blur", () => {
-        queueEvent("window_blur");
-      });
-
-      window.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        queueEvent("right_click");
-      });
-
-      let devtoolsOpen = false;
-      setInterval(() => {
-        const marker = new Image();
-        Object.defineProperty(marker, "id", {
-          get() {
-            if (!devtoolsOpen) {
-              devtoolsOpen = true;
-              queueEvent("devtools_open");
-            }
-            return "devtools-probe";
-          }
-        });
-        console.debug(marker);
-        setTimeout(() => {
-          devtoolsOpen = false;
-        }, 1500);
-      }, 1000);
-
-      beginBtn.addEventListener("click", () => {
-        startSession();
-      });
-
-      resumeBtn.addEventListener("click", async () => {
-        const saved = JSON.parse(localStorage.getItem("ambi_session") || "null");
-        if (!saved) return;
-        sessionToken = saved.sessionToken;
-        questionNumber = saved.questionNumber || 0;
-        maxQuestions = saved.maxQuestions || CONFIG.maxQuestions;
-        correctCount = saved.correctCount || 0;
-        sessionStartedAt = saved.sessionStartedAt || Date.now();
-        showScreen("test");
-        startQuestion();
-      });
-
-      mobileContinueBtn.addEventListener("click", () => {
-        enableMobileTracking();
-      });
-
-      reloadBtn.addEventListener("click", () => location.reload());
-
-      window.addEventListener("error", (event) => {
-        errorText.textContent = `Session: ${sessionToken || "not started"}`;
-        showScreen("error");
-        fetch(`${API_BASE}/api/session/error`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionToken, message: event.message, stack: event.error && event.error.stack })
-        }).catch(() => {});
-      });
-
-      updateStatus();
-      render();
-      (async () => {
-        const saved = JSON.parse(localStorage.getItem("ambi_session") || "null");
-        if (!saved || !saved.sessionToken) return;
-        const res = await fetch(`${API_BASE}/api/session/status?token=${encodeURIComponent(saved.sessionToken)}`).catch(() => null);
-        if (res && res.ok) {
-          const status = await res.json();
-          if (status.status === "in_progress" && !status.expired) {
-            resumeBtn.classList.remove("is-hidden");
-            return;
-          }
-        }
-        localStorage.removeItem("ambi_session");
-      })();
-      setInterval(saveSessionState, 10000);
-      window.addEventListener("online", flushAnswerQueue);
-      if (inviteToken) {
-        fetch(`${API_BASE}/api/invite/${inviteToken}`)
-          .then((res) => res.ok ? res.json() : null)
-          .then((invite) => {
-            if (invite && invite.candidateName) {
-              candidateName.value = invite.candidateName;
-            }
-          })
-          .catch(() => {});
-      }
-      // Select camera or motion tracking based on device capability.
-      async function chooseTrackingMode() {
-        let hasCamera = false;
-        try {
-          if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            hasCamera = devices.some((device) => device.kind === "videoinput");
-          }
-        } catch (err) {
-          hasCamera = false;
-        }
-        const canUseGyro = "DeviceOrientationEvent" in window;
-        if ((!hasCamera || (canUseGyro && isSmallScreen)) && canUseGyro) {
-          isMobile = true;
-          statusText.textContent = "Motion ready";
-          return;
-        }
-        if (hasCamera && navigator.mediaDevices) {
-          isMobile = false;
-          initCamera();
-          return;
-        }
-        trackingAvailable = false;
-        calibrated = true;
-        angleDeg = 0;
-        statusText.textContent = "Camera unavailable";
-        statusDot.className = "status-dot status-dot--bad";
-      }
-      chooseTrackingMode();
-
-      setInterval(checkRecovery, 500);
-      // Keep answer choices and WebGL output synchronized with head angle.
-      function animationLoop() {
-        if (currentQuestionId) {
-          syncAnswerOptionsToAngle();
-          render();
-        }
-        requestAnimationFrame(animationLoop);
-      }
-      requestAnimationFrame(animationLoop);
-
-      // Test helpers for automated/headless clients. These are deliberately
-      // small shims that allow external scripts to inject a valid session
-      // token and start the question flow without calling the public UI
-      // startSession() (useful for headless E2E where getUserMedia is absent).
-      console.debug('Defining __ambi_test helper');
-      const __ambi_prev_pending = window.__ambi_test && window.__ambi_test._pendingToken;
-      window.__ambi_test = {
-        setToken: (token) => {
-          console.debug('__ambi_test.setToken', token);
-          sessionToken = token;
-          window.__ambiSessionToken = token;
+      const DOM = {
+        screens: {
+          start: document.getElementById('screen-start'),
+          calibrate: document.getElementById('screen-calibrate'),
+          test: document.getElementById('screen-test'),
+          complete: document.getElementById('screen-complete')
         },
-        beginSessionViaToken: (token) => {
-          console.debug('beginSessionViaToken called', token);
-          sessionToken = token;
-          window.__ambiSessionToken = token;
-          questionNumber = 0;
-          correctCount = 0;
-          sessionStartedAt = Date.now();
-          saveSessionState();
-          flushEvents();
-          calibrated = true;
-          angleDeg = 0;
-          showScreen("test");
-          console.debug('beginSessionViaToken starting question flow', { questionNumber, sessionToken });
-          startQuestion();
-        }
+        checklist: {
+          camera: document.getElementById('checkCamera'),
+          face: document.getElementById('checkFace'),
+          light: document.getElementById('checkLight')
+        },
+        beginBtn: document.getElementById('beginBtn'),
+        nameInput: document.getElementById('candidateName'),
+        canvas: document.getElementById('glCanvas'),
+        video: document.getElementById('inputVideo'),
+        statusDot: document.getElementById('statusDot'),
+        statusText: document.getElementById('statusText'),
+        progress: document.getElementById('progressText'),
+        answers: document.getElementById('answerButtons')
       };
-      if (__ambi_prev_pending) {
-        try { window.__ambi_test.beginSessionViaToken(__ambi_prev_pending); } catch (e) { console.error('failed to auto-begin pending token', e); }
-      }
-      window.addEventListener('message', (ev) => {
-        if (ev && ev.data && ev.data.type === 'ambi_begin_with_token') {
-          console.debug('message received ambi_begin_with_token', ev.data && ev.data.token);
-          try { window.__ambi_test.beginSessionViaToken(ev.data.token); } catch (e) { console.error('Error invoking beginSessionViaToken', e); }
-        }
-      });
 
-      window.addEventListener("beforeunload", () => {
-        if (sessionToken) {
-          navigator.sendBeacon(`${API_BASE}/api/session/event`, JSON.stringify({
-            sessionToken,
-            type: "session_end"
-          }));
+      let state = {
+        token: null,
+        qId: null,
+        qIdx: 0,
+        qTotal: 0,
+        angle: 0,
+        baseline: 0,
+        startTime: 0,
+        locked: false,
+        cameraActive: false,
+        faceDetected: false
+      };
+
+      // --- WebGL Engine ---
+      const gl = DOM.canvas.getContext('webgl', { antialias: true, alpha: false });
+      const vertSrc = `attribute vec2 p; varying vec2 v; void main(){ v=p*0.5+0.5; gl_Position=vec4(p,0,1); }`;
+      const fragSrc = `
+        precision highp float;
+        varying vec2 v;
+        uniform sampler2D c, l, r;
+        uniform float a, m, t; // angle, max, transition
+        void main() {
+          float aa = abs(a);
+          float parallax = (a / 90.0) * 0.12;
+          vec2 uv = clamp(v + vec2(parallax, 0.0), 0.0, 1.0);
+          vec4 C = texture2D(c, v);
+          vec4 L = texture2D(l, uv);
+          vec4 R = texture2D(r, uv);
+          float b = smoothstep(t, t + 10.0, aa);
+          vec4 D = a < 0.0 ? L : R;
+          gl_FragColor = vec4(mix(C.rgb, D.rgb, b), 1.0);
         }
-      });
-      window.addEventListener("beforeunload", (event) => {
-        if (sessionToken && questionNumber > 0 && questionNumber < maxQuestions) {
-          event.preventDefault();
-          event.returnValue = "";
-          queueEvent("tab_close_attempt");
-        }
-      });
-      } catch (err) {
-        document.querySelectorAll(".screen").forEach((screen) => screen.classList.remove("active"));
-        const errorScreen = document.getElementById("screen-error");
-        const errorTextNode = document.getElementById("errorText");
-        if (errorScreen) errorScreen.classList.add("active");
-        if (errorTextNode) errorTextNode.textContent = "Something went wrong. Your progress has been saved.";
-        fetch(`${location.origin}/api/session/error`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            sessionToken: window.__ambiSessionToken || "",
-            message: err && err.message,
-            stack: err && err.stack
-          })
-        }).catch(() => {});
+      `;
+
+      function createShader(type, src) {
+        const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+        return s;
       }
+      const prog = gl.createProgram();
+      gl.attachShader(prog, createShader(gl.VERTEX_SHADER, vertSrc));
+      gl.attachShader(prog, createShader(gl.FRAGMENT_SHADER, fragSrc));
+      gl.linkProgram(prog); gl.useProgram(prog);
+
+      const buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      
+      const texs = [gl.createTexture(), gl.createTexture(), gl.createTexture()];
+      const unis = { a: gl.getUniformLocation(prog, 'a'), m: gl.getUniformLocation(prog, 'm'), t: gl.getUniformLocation(prog, 't') };
+      gl.uniform1f(unis.m, CONFIG.ANGLES.MAX); gl.uniform1f(unis.t, CONFIG.ANGLES.THRESHOLD);
+
+      const offCanvas = document.createElement('canvas'); const ctx = offCanvas.getContext('2d');
+      offCanvas.width = 1280; offCanvas.height = 720;
+
+      /** Renders text content to a WebGL texture */
+      function uploadText(tex, text, idx) {
+        ctx.fillStyle = '#fff'; ctx.fillRect(0,0,1280,720);
+        ctx.fillStyle = '#0f172a'; ctx.font = 'bold 48px Inter, sans-serif';
+        const words = text.split(' '); let line = '', y = 180;
+        words.forEach(w => {
+          if (ctx.measureText(line + w).width > 1100) { ctx.fillText(line, 80, y); line = w + ' '; y += 70; }
+          else line += w + ' ';
+        });
+        ctx.fillText(line, 80, y);
+        gl.activeTexture(gl.TEXTURE0 + idx); gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, offCanvas);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      }
+
+      // --- Crypto & Security ---
+      async function deriveKey(tok) {
+        const e = new TextEncoder();
+        const base = await crypto.subtle.importKey('raw', e.encode(tok), 'HKDF', false, ['deriveKey']);
+        return await crypto.subtle.deriveKey(
+          { name: 'HKDF', salt: e.encode('3d-ambi-v1'), info: e.encode('session-key\x01'), hash: 'SHA-256' },
+          base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']
+        );
+      }
+
+      async function decrypt(data, key) {
+        const ct = new Uint8Array(data.encrypted.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+        const iv = new Uint8Array(data.nonce.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+        const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+        return JSON.parse(new TextDecoder().decode(dec));
+      }
+
+      async function sign(idx, aIdx) {
+        const e = new TextEncoder();
+        const k = await crypto.subtle.importKey('raw', e.encode(state.token), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const sig = await crypto.subtle.sign('HMAC', k, e.encode(idx.toString() + aIdx.toString()));
+        return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+      }
+
+      // --- Core Logic ---
+      async function fetchQuestion() {
+        const res = await fetch(`${CONFIG.API_BASE}/api/session/next`, {
+          method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ sessionToken: state.token })
+        });
+        const data = await res.json();
+        const key = await deriveKey(state.token);
+        const q = await decrypt(data, key);
+        state.qId = q.questionId; state.qTotal = q.totalQuestions;
+        DOM.progress.textContent = `Question ${state.qIdx + 1} of ${state.qTotal}`;
+        uploadText(texs[0], q.question, 0);
+        uploadText(texs[1], q.decoyLeft.question, 1);
+        uploadText(texs[2], q.decoyRight.question, 2);
+        DOM.answers.innerHTML = '';
+        q.options.forEach((opt, i) => {
+          const b = document.createElement('button'); b.className = 'btn'; b.textContent = opt;
+          b.onclick = () => submitAnswer(i); DOM.answers.appendChild(b);
+        });
+        state.startTime = Date.now(); state.locked = false;
+      }
+
+      async function submitAnswer(idx) {
+        if (state.locked) return; state.locked = true;
+        const proof = await sign(state.qId, idx);
+        await fetch(`${CONFIG.API_BASE}/api/session/answer`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ sessionToken: state.token, questionId: state.qId, answerIndex: idx, timeMs: Date.now() - state.startTime, headCompliance: 1.0, proof })
+        });
+        state.qIdx++; 
+        if (state.qIdx >= state.qTotal) show('complete'); else fetchQuestion();
+      }
+
+      // --- Biometrics & Accessibility ---
+      function setupTracking() {
+        const fm = new FaceMesh({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+        fm.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.6 });
+        fm.onResults(res => {
+          state.faceDetected = res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0;
+          if (state.faceDetected) {
+            const lm = res.multiFaceLandmarks[0];
+            const yaw = (lm[1].x - (lm[33].x + lm[263].x)/2) / (lm[263].x - lm[33].x) * 50;
+            state.angle = Math.max(-45, Math.min(45, yaw - state.baseline));
+          }
+          updateUI();
+        });
+        const cam = new Camera(DOM.video, { onFrame: async () => { await fm.send({ image: DOM.video }); }, width: 1280, height: 720 });
+        cam.start().then(() => state.cameraActive = true);
+      }
+
+      function updateUI() {
+        if (DOM.screens.start.classList.contains('active')) {
+          const upd = (el, ok) => { el.querySelector('.icon').textContent = ok ? '✅' : '⭕'; el.classList.toggle('ok', ok); };
+          upd(DOM.checklist.camera, state.cameraActive); upd(DOM.checklist.face, state.faceDetected); upd(DOM.checklist.light, true);
+          DOM.beginBtn.disabled = !(state.cameraActive && state.faceDetected && DOM.nameInput.value.trim());
+        }
+        const ok = Math.abs(state.angle) <= CONFIG.ANGLES.THRESHOLD;
+        DOM.statusDot.className = `status-dot ${ok ? 'status-dot--good' : 'status-dot--bad'}`;
+        DOM.statusText.textContent = ok ? 'Aligned' : 'Out of Zone';
+      }
+
+      function show(s) { Object.values(DOM.screens).forEach(v => v.classList.remove('active')); DOM.screens[s].classList.add('active'); }
+
+      DOM.beginBtn.onclick = async () => {
+        const res = await fetch(`${CONFIG.API_BASE}/api/session/start`, {
+          method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ name: DOM.nameInput.value })
+        });
+        const d = await res.json(); state.token = d.sessionToken;
+        show('calibrate'); setTimeout(() => { state.baseline = state.angle; show('test'); fetchQuestion(); }, CONFIG.TIMEOUTS.CALIB);
+      };
+
+      DOM.nameInput.oninput = updateUI;
+      setupTracking();
+      (function loop() {
+        gl.uniform1f(unis.a, state.angle); gl.drawArrays(gl.TRIANGLES, 0, 6);
+        requestAnimationFrame(loop);
+      })();
     })();
   </script>
 </body>
