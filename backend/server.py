@@ -8,11 +8,16 @@ import csv
 import io
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+from collections import deque
+from datetime import datetime, timedelta
 
 import db
 import auth
 import logic
 from config import Config
+
+# Simple in-memory rate limiter: {ip: deque([timestamps])}
+LOGIN_ATTEMPTS = {}
 
 # High-fidelity logging for system monitoring
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -118,12 +123,6 @@ class AmbiRequestHandler(BaseHTTPRequestHandler):
             self.send_error(404)
         except Exception: logger.error(traceback.format_exc()); self.send_error(500)
 
-from collections import deque
-from datetime import datetime, timedelta
-
-# Simple in-memory rate limiter: {ip: deque([timestamps])}
-LOGIN_ATTEMPTS = {}
-
     def is_rate_limited(self, ip: str) -> bool:
         now = datetime.now()
         window = timedelta(seconds=Config.AUTH_WINDOW_SEC)
@@ -160,7 +159,17 @@ LOGIN_ATTEMPTS = {}
             if path == "/api/session/start":
                 self.send_json(200, {"sessionToken": logic.create_session(body.get("name", "Anonymous Candidate"))}); return
 
+            if path == "/api/session/event":
+                logic.record_event(
+                    body.get("sessionToken"),
+                    body.get("type", "unknown"),
+                    body.get("detail", "")
+                )
+                self.send_json(200, {"status": "ok"})
+                return
+
             if path == "/api/session/next":
+
                 tok = body.get("sessionToken"); s = logic.get_session(tok)
                 if not s: self.send_json(404, {"error": "invalid_session"}); return
                 idx = s["next_index"]; order = json.loads(s["question_order_json"])

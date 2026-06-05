@@ -14,14 +14,21 @@ from config import Config
 EVENT_CONDITION = threading.Condition()
 LATEST_EVENTS = []
 
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+
 def derive_session_key(session_token: str) -> bytes:
     """
     Derives a cryptographically strong 256-bit AES key unique to the candidate's session.
-    Uses an HKDF-style HMAC chain to ensure key isolation.
+    Matches the HKDF implementation in the frontend (index.html).
     """
-    input_keying_material = session_token.encode("utf-8")
-    pseudo_random_key = hmac.new(Config.SESSION_SALT, input_keying_material, hashlib.sha256).digest()
-    return hmac.new(pseudo_random_key, b"3d-ambi-v1-session-key", hashlib.sha256).digest()
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=Config.SESSION_SALT,
+        info=b"session-key\x01",
+    )
+    return hkdf.derive(session_token.encode("utf-8"))
 
 def encrypt_data(data_dictionary: dict, key_bytes: bytes) -> dict:
     """
@@ -76,9 +83,9 @@ def create_session(candidate_name: str) -> str:
         
     return session_token
 
-def record_answer(session_token: str, question_id: int, answer_index: int, time_ms: int, head_compliance: float, render_proof: str = None) -> tuple:
+def record_answer(session_token: str, question_id: int, answer_index: int, time_ms: int, head_compliance: float, render_proof: str) -> tuple:
     """
-    Commits a candidate's answer to the database after verifying the Render Proof.
+    Commits a candidate's answer to the database after verifying the mandatory Render Proof.
     This proof prevents candidates from simulating answers via DevTools without correct head alignment.
     """
     session_data = get_session(session_token)
@@ -86,15 +93,18 @@ def record_answer(session_token: str, question_id: int, answer_index: int, time_
         return False, "invalid_session"
     
     # 1. Cryptographic Rendering Verification (Challenge-Response)
-    if render_proof:
-        session_key = derive_session_key(session_token)
-        # The challenge is the question ID combined with the selected answer
-        challenge_material = str(question_id).encode("utf-8") + str(answer_index).encode("utf-8")
-        expected_hmac = hmac.new(session_key, challenge_material, hashlib.sha256).hexdigest()
-        
-        if not hmac.compare_digest(render_proof, expected_hmac):
-            record_event(session_token, "tamper_detected", "Rendering signature mismatch - potential bypass attempt")
-            return False, "invalid_rendering_proof"
+    if not render_proof:
+        record_event(session_token, "missing_proof", "Answer submitted without rendering proof")
+        return False, "proof_required"
+
+    session_key = derive_session_key(session_token)
+    # The challenge is the question ID combined with the selected answer
+    challenge_material = str(question_id).encode("utf-8") + str(answer_index).encode("utf-8")
+    expected_hmac = hmac.new(session_key, challenge_material, hashlib.sha256).hexdigest()
+    
+    if not hmac.compare_digest(render_proof, expected_hmac):
+        record_event(session_token, "tamper_detected", "Rendering signature mismatch - potential bypass attempt")
+        return False, "invalid_rendering_proof"
 
     # 2. Database Persistence
     with DB_LOCK:

@@ -24,4 +24,4 @@ RUN adduser --disabled-password --gecos '' appuser || true
 RUN chown -R appuser:appuser /app || true
 USER appuser
 
-CMD ["python", "server.py"]
+CMD ["python", "backend/server.py"]
