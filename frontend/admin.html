@@ -154,7 +154,7 @@
      * Professional proctoring and behavioral auditing interface.
      */
     (() => {
-      let authState = { token: "", csrf: "", sessions: [] };
+      let authState = { sessions: [] };
 
       const UI = {
         login: { screen: 'loginScreen', user: 'loginUser', pass: 'loginPass', btn: 'loginBtn', msg: 'loginMsg' },
@@ -166,7 +166,13 @@
       };
 
       // --- Core Services ---
-      const getHeaders = () => ({ "Content-Type": "application/json", "Authorization": `Bearer ${authState.token}`, "X-CSRF-Token": authState.csrf });
+      const api = async (path, method = 'GET', body = null) => {
+        const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+        if (body) headers['Content-Type'] = 'application/json';
+        const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : null });
+        if (res.status === 401) { location.reload(); return; }
+        return res;
+      };
 
       function showScreen(name) {
         UI.screens.forEach(s => document.getElementById(`screen-${s}`).classList.remove('active'));
@@ -175,25 +181,20 @@
         if (name === 'sessions') refreshSessions();
       }
 
-      async function attemptLogin() {
+      document.getElementById(UI.login.btn).onclick = async () => {
         const user = document.getElementById(UI.login.user).value;
         const pass = document.getElementById(UI.login.pass).value;
-        const res = await fetch('/api/admin/login', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ username: user, password: pass })
-        });
+        const res = await api('/api/admin/login', 'POST', { username: user, password: pass });
         
-        if (!res.ok) { document.getElementById(UI.login.msg).textContent = "Invalid administrator credentials"; return; }
-        const data = await res.json();
-        authState.token = data.token; authState.csrf = data.csrfToken;
+        if (!res || !res.ok) { document.getElementById(UI.login.msg).textContent = "Invalid administrator credentials"; return; }
         document.getElementById(UI.login.screen).classList.remove('active');
         document.getElementById(UI.dash).classList.remove('is-hidden');
         refreshSessions();
-      }
+      };
 
       async function refreshSessions() {
         try {
-          const res = await fetch('/api/admin/sessions', { headers: getHeaders() });
+          const res = await api('/api/admin/sessions');
           authState.sessions = await res.json();
           renderSessions();
         } catch(e) { console.error("Session sync failed", e); }
@@ -225,7 +226,7 @@
       }
 
       async function loadForensicAudit(token, name) {
-        const res = await fetch(`/api/admin/session/${token}`, { headers: getHeaders() });
+        const res = await api(`/api/admin/session/${token}`);
         const auditData = await res.json();
         document.getElementById(UI.replay.section).classList.remove('is-hidden');
         document.getElementById(UI.replay.name).textContent = name;
@@ -262,37 +263,34 @@
       document.getElementById('addQuestionBtn').onclick = () => document.getElementById('questionForm').classList.remove('is-hidden');
       document.getElementById('submitQuestion').onclick = async () => {
         const payload = {
-          subject: document.getElementById('formSubject').value,
           question: document.getElementById('formText').value,
           options: document.getElementById('formOptions').value.split(','),
-          correctIndex: parseInt(document.getElementById('formCorrect').value),
-          decoyLeft: document.getElementById('formDecoyL').value,
-          decoyRight: document.getElementById('formDecoyR').value
         };
-        const res = await fetch('/api/admin/question', {
-          method: 'POST',
-          headers: getHeaders(),
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) {
+        const res = await api('/api/admin/question', 'POST', payload);
+        if (res && res.ok) {
           document.getElementById('questionForm').classList.add('is-hidden');
-          // Refresh questions list
           refreshQuestions();
         }
       };
       
       async function refreshQuestions() {
-        const res = await fetch('/api/admin/questions', { headers: getHeaders() });
+        const res = await api('/api/admin/questions');
         const questions = await res.json();
         const tbody = document.getElementById('questionsTable').querySelector('tbody');
-        tbody.innerHTML = questions.map(q => `<tr><td>${q.id}</td><td>${q.subject}</td><td>${q.question_text}</td><td>${q.correct_index}</td></tr>`).join('');
+        tbody.innerHTML = questions.map(q => `<tr><td>${q.id}</td><td>General</td><td>${q.text}</td><td>-</td></tr>`).join('');
       }
+
+      document.getElementById('exportCsv').onclick = () => {
+        window.location.href = '/api/admin/sessions/export';
+      };
       
-      // Hook into nav click to refresh questions list
       document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', (e) => {
-          if (e.target.dataset.screen === 'questions') refreshQuestions();
+          const screen = e.target.dataset.screen;
+          showScreen(screen);
+          if (screen === 'questions') refreshQuestions();
       }));
     })();
   </script>
+
 </body>
 </html>

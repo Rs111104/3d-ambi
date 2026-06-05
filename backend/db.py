@@ -1,93 +1,87 @@
 import sqlite3
-import threading
+import json
+import time
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data.db")
-DB_LOCK = threading.RLock()
+DB_PATH = os.environ.get("DB_PATH", "exam.db")
 
-def db_connect():
-    """Returns a connection to the SQLite database with row factory enabled."""
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
-    """Initializes the database schema if it doesn't already exist."""
-    with DB_LOCK:
-        conn = db_connect()
-        try:
-            conn.executescript("""
-                CREATE TABLE IF NOT EXISTS questions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    subject TEXT,
-                    difficulty TEXT,
-                    question_text TEXT,
-                    options_json TEXT,
-                    correct_index INTEGER,
-                    decoy_left_text TEXT,
-                    decoy_right_text TEXT,
-                    created_at INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS session_meta (
-                    token TEXT PRIMARY KEY,
-                    name TEXT,
-                    started_at INTEGER,
-                    completed_at INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS sessions (
-                    token TEXT PRIMARY KEY,
-                    session_key TEXT,
-                    next_index INTEGER DEFAULT 0,
-                    question_order_json TEXT,
-                    answer_received INTEGER DEFAULT 0,
-                    integrity_score INTEGER DEFAULT 100,
-                    created_at INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS session_answers (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    token TEXT,
-                    question_id INTEGER,
-                    answer_index INTEGER,
-                    correct INTEGER,
-                    time_ms INTEGER,
-                    head_compliance REAL,
-                    created_at INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS session_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    token TEXT,
-                    event_type TEXT,
-                    detail TEXT,
-                    created_at INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS admin_users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE,
-                    password_hash TEXT,
-                    salt TEXT,
-                    created_at INTEGER
-                );
-                CREATE TABLE IF NOT EXISTS admin_sessions (
-                    token TEXT PRIMARY KEY,
-                    username TEXT,
-                    expires_at REAL,
-                    csrf_token TEXT
-                );
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                );
-            """)
-            conn.commit()
-        finally:
-            conn.close()
+    with get_db() as cx:
+        cx.executescript("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            exam_id TEXT,
+            candidate_email TEXT,
+            current_q INTEGER DEFAULT 0,
+            answers TEXT DEFAULT '{}',
+            consented_at REAL,
+            started_at REAL,
+            finished_at REAL,
+            integrity_score INTEGER DEFAULT 100
+        );
+        CREATE TABLE IF NOT EXISTS flag_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES sessions(id),
+            event_type TEXT NOT NULL,
+            ts REAL NOT NULL,
+            duration_ms INTEGER,
+            detail TEXT
+        );
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+            token TEXT PRIMARY KEY,
+            created_at REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text TEXT NOT NULL,
+            options TEXT NOT NULL -- JSON list
+        );
+        """)
+        
+        # Seed questions if empty
+        count = cx.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+        if count == 0:
+            questions = [
+                ("What is the time complexity of quicksort?", json.dumps(["O(n)", "O(n log n)", "O(n²)", "O(log n)"])),
+                ("Which data structure uses LIFO?", json.dumps(["Queue", "Stack", "Heap", "Tree"]))
+            ]
+            cx.executemany("INSERT INTO questions (text, options) VALUES (?,?)", questions)
+            cx.commit()
 
-def get_setting(key: str, default: str = None) -> str:
-    """Fetch a configuration value from the persistent settings table."""
-    with DB_LOCK:
-        conn = db_connect()
-        try:
-            row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
-            return row["value"] if row else default
-        finally:
-            conn.close()
+def session_get(sid: str) -> dict | None:
+    if not sid: return None
+    with get_db() as cx:
+        row = cx.execute(
+            "SELECT id, current_q, answers, started_at FROM sessions WHERE id=?", (sid,)
+        ).fetchone()
+    if not row: return None
+    return {"id": row[0], "q": row[1],
+            "answers": json.loads(row[2]), "started_at": row[3]}
+
+def session_upsert(sid: str, **fields):
+    with get_db() as cx:
+        # Check if exists
+        exists = cx.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone()
+        if exists:
+            set_clause = ", ".join([f"{k}=?" for k in fields.keys()])
+            vals = list(fields.values()) + [sid]
+            cx.execute(f"UPDATE sessions SET {set_clause} WHERE id=?", vals)
+        else:
+            cols = ", ".join(["id"] + list(fields.keys()))
+            placeholders = ", ".join(["?"] * (len(fields) + 1))
+            vals = [sid] + list(fields.values())
+            cx.execute(f"INSERT INTO sessions ({cols}) VALUES ({placeholders})", vals)
+        cx.commit()
+
+def log_flag(sid: str, event_type: str, detail: str = None, duration_ms: int = None):
+    with get_db() as cx:
+        cx.execute(
+            "INSERT INTO flag_events (session_id, event_type, ts, duration_ms, detail) VALUES (?,?,?,?,?)",
+            (sid, event_type, time.time(), duration_ms, detail)
+        )
+        cx.commit()

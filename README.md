@@ -1,94 +1,92 @@
-<!-- 
-RESUME BULLET:
-Developed a high-integrity assessment platform using WebGL shaders and MediaPipe computer vision to implement biometric angle-dependent rendering; secured data pipeline via AES-256-GCM encrypted content delivery and HMAC-SHA256 rendering proofs.
--->
+# 3d-ambigram — angle-dependent anti-cheat exam system
 
-# 3D Ambi: Biometric Anti-Cheat Assessment Engine
+An online exam proctoring system that uses webcam head-pose estimation and
+WebGL angle-dependent rendering to show the real question only to a candidate
+sitting directly in front of their screen.
 
-**Secure, angle-dependent assessment content rendered in real-time using computer vision and WebGL.**
-
-[![Security Hardened](https://img.shields.io/badge/Security-Hardened-success.svg)](#-security-architecture)
-[![CI Pipeline](https://github.com/Rs111104/3d-ambigram/actions/workflows/ci.yml/badge.svg)](https://github.com/Rs111104/3d-ambigram/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-
-3D Ambi is a production-grade proctoring solution that solves the "side-viewer" cheating problem. By tracking a candidate's head orientation in 3D space, the system dynamically cross-fades real exam content into plausible decoys for anyone not facing the screen directly.
-
-[**Interactive WebGL Demo** (Simulated Rotation)](demo.html)
+> Webcam analysis runs entirely in the browser. No video is uploaded.
 
 ---
 
-## 🚀 Key Innovation: The "Privacy Filter" Shader
+## How it works
 
-Unlike traditional proctoring that simply flags behavior, 3D Ambi makes cheating physically impossible. 
-- **Direct View:** Crystal-clear question rendering.
-- **Peripheral View:** Real-time cross-fade into a decoy question using a custom Gaussian blur + parallax offset WebGL shader.
-- **Biometric Baseline:** Uses MediaPipe Face Mesh to calibrate to the candidate's specific facial structure and lighting.
+1. The candidate's webcam feeds MediaPipe FaceMesh running as a WASM module
+   in the browser at 5fps.
+2. Head yaw angle is estimated from 3D facial landmarks.
+3. A WebGL canvas blends between the real question (visible at 0°±15°) and a
+   decoy question (visible at wide angles) proportional to deviation.
+4. Suspicious events (tab switch, no face, multiple faces, blink absence,
+   decoy requested) are timestamped and sent to the backend.
+5. Admins review flagged sessions with duration-aware event timelines.
 
----
-
-## 🛠️ System Architecture
-
-Built with a decoupled, modular architecture designed for security-first environments.
-
-```mermaid
-graph TD
-    subgraph "Client Layer (Vanilla JS + WebGL)"
-        C[Candidate App] -->|Head Yaw/Pitch| MP[MediaPipe Face Mesh]
-        C -->|Secure Render| GL[WebGL Fragment Shader]
-        C -->|In-Memory Decrypt| WC[Web Crypto API]
-    end
-    
-    subgraph "Server Layer (Python 3.10+)"
-        S[Threaded API Server] -->|Middleware| A[Auth & CSRF Protection]
-        S -->|Business Logic| L[Logic & Crypto Service]
-        L -->|Durable Storage| DB[(SQLite 3)]
-        S -->|Live Monitoring| SSE[SSE Event Stream]
-    end
-    
-    C <-->|AES-256-GCM Encrypted JSON| S
+```
+Browser (WebGL + MediaPipe)  ←→  Flask + Gunicorn  ←→  SQLite
 ```
 
----
+## Quick start
 
-## 🛡️ Security Architecture (Excellence Pass)
+```bash
+git clone https://github.com/Rs111104/3d-ambigram
+cd 3d-ambigram
 
-1.  **Encrypted Content Pipeline:** Questions never exist in the DOM. They are delivered as **AES-256-GCM** encrypted blobs. The decryption key is derived on-the-fly and resides only in the client's volatile memory.
-2.  **Cryptographic Rendering Proofs:** To prevent headless browser automation, every answer must include an **HMAC-SHA256 signature**. This signature is only valid if the client proves it was actively rendering the question at an aligned angle.
-3.  **Real-Time Forensic Auditing:** Administrators can scrub through a candidate's behavioral timeline with millisecond precision via **Server-Sent Events (SSE)**.
+# Generate a bcrypt password hash:
+python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
 
----
+# Set required environment variables:
+export ADMIN_USER="admin"
+export ADMIN_PASSWORD_HASH="<HASH_HERE>"
+export FLASK_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 
-## 📱 Experience Tour
+# Install and run:
+pip install -r backend/requirements.txt
+gunicorn -w 4 -b 0.0.0.0:8080 backend.server:app
+```
 
-### For Candidates
-- **Zero-Flicker Resume:** Sessions persist in local storage; refresh or crash recovery is seamless.
-- **Accessibility First:** Full ARIA compliance, keyboard navigation, and OS-level dark mode support.
-- **Biometric Checklist:** Professional pre-test verification of camera, lighting, and face alignment.
+Candidate page: http://localhost:8080/
+Admin page:     http://localhost:8080/admin
 
-### For Proctors
-- **Intelligence Dashboard:** Automated integrity scoring (PASS/WARN/REVIEW) based on behavioral heuristics.
-- **Forensic Replay:** Granular event logs (tab switches, face loss, inactivity) grouped into actionable incidents.
-- **Data Portability:** One-click CSV export of full audit logs for institutional record-keeping.
+## Docker
 
----
+```bash
+docker compose up
+```
 
-## 🏁 Quick Start
+## Environment variables
 
-1.  **Clone & Install:**
-    ```bash
-    git clone https://github.com/Rs111104/3d-ambigram.git
-    cd 3d-ambigram
-    pip install cryptography python-dotenv
-    ```
-2.  **Initialize & Seed:**
-    ```bash
-    python setup.py
-    ```
-3.  **Launch:**
-    ```bash
-    python backend/server.py
-    ```
-    *Admin Credentials: `admin / admin123`*
+| Variable              | Required | Description                                    |
+|-----------------------|----------|------------------------------------------------|
+| ADMIN_USER            | Yes      | Admin username                                 |
+| ADMIN_PASSWORD_HASH   | Yes      | bcrypt hash of admin password                  |
+| FLASK_SECRET          | Yes      | Random 32-byte hex string for session signing  |
+| DB_PATH               | No       | SQLite file path (default: exam.db)            |
+| PORT                  | No       | Server port (default: 8080)                    |
 
----
-*Developed as a demonstration of high-performance browser security and computer vision integration.*
+The server will refuse to start if required variables are not set.
+
+## Security model
+
+| Threat                        | Mitigation                                      |
+|-------------------------------|-------------------------------------------------|
+| Read question from network    | One question served per request, never full bank|
+| Virtual webcam (static photo) | Blink detection liveness check                  |
+| Multiple people at screen     | Multi-face detection → flag                     |
+| Brute-force admin login       | Rate limit: 5 attempts/minute per IP            |
+| CSRF on state endpoints       | X-Requested-With header check                   |
+| Session fixation              | New token on session start (secrets.token_urlsafe)|
+| Persistent admin access       | Admin session tokens expire after 1 hour        |
+
+## Roadmap
+
+- [x] Webcam head-pose detection
+- [x] WebGL angle-dependent question rendering
+- [x] Admin dashboard with flag events
+- [x] Blink-based liveness detection
+- [x] SQLite persistence
+- [ ] AI-generated decoy questions
+- [ ] Iris gaze estimation
+- [ ] Admin analytics charts
+- [ ] Mobile browser support
+
+## License
+
+MIT

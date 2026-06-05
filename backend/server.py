@@ -1,241 +1,287 @@
+import sys
 import os
-import json
+import secrets
 import time
+import json
 import logging
-import traceback
-import socket
-import csv
+import bcrypt
 import io
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
-from collections import deque
-from datetime import datetime, timedelta
+import csv
+from flask import Flask, request, jsonify, send_from_directory, redirect, abort, make_response
+from functools import wraps
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 import db
-import auth
-import logic
-from config import Config
 
-# Simple in-memory rate limiter: {ip: deque([timestamps])}
-LOGIN_ATTEMPTS = {}
+# Structured JSON Logging
+class JsonFormatter(logging.Formatter):
+    def format(self, record):
+        log_entry = {
+            "ts": self.formatTime(record),
+            "level": record.levelname,
+            "msg": record.getMessage(),
+            "logger": record.name,
+        }
+        if hasattr(record, "extra"):
+            log_entry.update(record.extra)
+        return json.dumps(log_entry)
 
-# High-fidelity logging for system monitoring
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-logger = logging.getLogger("3D-Ambi")
+handler = logging.StreamHandler()
+handler.setFormatter(JsonFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[handler])
+logger = logging.getLogger("3d-ambigram")
 
-class AmbiRequestHandler(BaseHTTPRequestHandler):
-    """Secure request handler for 3D Ambi API and high-performance static asset delivery."""
+def _require_env(key: str) -> str:
+    val = os.environ.get(key)
+    if not val:
+        print(f"FATAL: environment variable '{key}' is not set.", file=sys.stderr)
+        sys.exit(1)
+    return val
+
+# Critical security checks at startup
+ADMIN_USER = _require_env("ADMIN_USER")
+ADMIN_PASSWORD_HASH = _require_env("ADMIN_PASSWORD_HASH")
+FLASK_SECRET = _require_env("FLASK_SECRET")
+
+app = Flask(__name__, static_folder="../frontend")
+app.secret_key = FLASK_SECRET
+
+# Rate Limiter
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        token = request.cookies.get("admin_token")
+        if not token:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "unauthorized"}), 401
+            return redirect("/admin/login")
+        with db.get_db() as cx:
+            row = cx.execute(
+                "SELECT created_at FROM admin_sessions WHERE token=?", (token,)
+            ).fetchone()
+        if not row or time.time() - row[0] > 3600:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "session expired"}), 401
+            return redirect("/admin/login")
+        return f(*args, **kwargs)
+    return wrapper
+
+@app.before_request
+def check_csrf_header():
+    if request.method in ("POST", "PATCH", "DELETE"):
+        if request.content_type == "application/json":
+            if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+                abort(403)
+
+@app.route("/")
+def index():
+    return send_from_directory(app.static_folder, "index.html")
+
+@app.route("/admin")
+@admin_required
+def admin_dashboard():
+    return send_from_directory(app.static_folder, "admin.html")
+
+@app.route("/admin/login", methods=["GET"])
+def admin_login_page():
+    return send_from_directory(app.static_folder, "admin.html")
+
+@app.route("/api/admin/login", methods=["POST"])
+@limiter.limit("5 per minute")
+def admin_login():
+    body = request.get_json(silent=True) or {}
+    u = body.get("username", "")
+    p = body.get("password", "")
     
-    def send_json(self, status: int, data: dict):
-        """Standardized JSON response with security and CORS headers."""
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+    if u != ADMIN_USER or not bcrypt.checkpw(p.encode(), ADMIN_PASSWORD_HASH.encode()):
+        logger.warning("failed admin login attempt", extra={"user": u})
+        return jsonify({"error": "invalid credentials"}), 401
+    
+    token = secrets.token_urlsafe(32)
+    with db.get_db() as cx:
+        cx.execute("INSERT INTO admin_sessions (token, created_at) VALUES (?,?)", (token, time.time()))
+        cx.commit()
+    
+    logger.info("admin login successful", extra={"user": u})
+    resp = jsonify({"ok": True})
+    resp.set_cookie("admin_token", token, httponly=True,
+                    samesite="Strict", secure=True, max_age=3600)
+    return resp
 
-    def do_OPTIONS(self):
-        """Handle CORS pre-flight requests."""
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
-        self.end_headers()
+@app.route("/api/session/start", methods=["POST"])
+@limiter.limit("3 per 10 minutes")
+def start_session():
+    sid = secrets.token_urlsafe(32)
+    db.session_upsert(sid, started_at=time.time())
+    logger.info("session started", extra={"session_id": sid})
+    resp = jsonify({"ok": True, "session_id": sid})
+    resp.set_cookie("session_id", sid, httponly=True, samesite="Strict", secure=True)
+    return resp
 
-    def validate_administrative_session(self, require_csrf: bool = False) -> bool:
-        """Verifies Bearer token and optional CSRF state for administrative actions."""
-        auth_header = self.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            # Allow query-string token for SSE and exports
-            token = parse_qs(urlparse(self.path).query).get("token", [""])[0]
-            if token and auth.verify_admin_token(token): return True
-            self.send_json(401, {"error": "Unauthorized session"}); return False
+@app.route("/api/session/consent", methods=["POST"])
+def session_consent():
+    sid = request.cookies.get("session_id")
+    if not db.session_get(sid):
+        return jsonify({"error": "unauthorized"}), 403
+    db.session_upsert(sid, consented_at=time.time())
+    return jsonify({"ok": True})
+
+@app.route("/api/question", methods=["GET"])
+def get_question():
+    sid = request.cookies.get("session_id")
+    sess = db.session_get(sid)
+    if not sess:
+        return jsonify({"error": "unauthorized"}), 403
+    
+    idx = sess["q"]
+    with db.get_db() as cx:
+        questions = cx.execute("SELECT id, text, options FROM questions ORDER BY id").fetchall()
+    
+    if idx >= len(questions):
+        db.session_upsert(sid, finished_at=time.time())
+        return jsonify({"done": True})
+    
+    q = questions[idx]
+    return jsonify({
+        "id": q["id"],
+        "text": q["text"],
+        "options": json.loads(q["options"]),
+        "index": idx,
+        "total": len(questions)
+    })
+
+@app.route("/api/decoy", methods=["GET"])
+def get_decoy():
+    sid = request.cookies.get("session_id")
+    if not db.session_get(sid):
+        abort(403)
+    db.log_flag(sid, "decoy_requested")
+    return jsonify({
+        "text": "Which planet is closest to the Sun?",
+        "options": ["Venus", "Mercury", "Earth", "Mars"]
+    })
+
+@app.route("/api/answer", methods=["POST"])
+def submit_answer():
+    sid = request.cookies.get("session_id")
+    sess = db.session_get(sid)
+    if not sess:
+        return jsonify({"error": "unauthorized"}), 403
+    
+    body = request.get_json(silent=True) or {}
+    q_id = body.get("questionId")
+    answer = body.get("answer")
+    
+    answers = sess["answers"]
+    answers[str(q_id)] = answer
+    
+    db.session_upsert(sid, current_q=sess["q"] + 1, answers=json.dumps(answers))
+    return jsonify({"ok": True})
+
+@app.route("/api/flag", methods=["POST"])
+def log_event():
+    sid = request.cookies.get("session_id")
+    if not sid:
+        return jsonify({"error": "unauthorized"}), 403
+    
+    body = request.get_json(silent=True) or {}
+    event_type = body.get("type")
+    detail = body.get("detail")
+    duration = body.get("duration_ms")
+    
+    db.log_flag(sid, event_type, detail, duration)
+    logger.warning("flag event", extra={"session_id": sid, "type": event_type, "detail": detail})
+    
+    # Simple integrity penalty
+    with db.get_db() as cx:
+        cx.execute("UPDATE sessions SET integrity_score = MAX(0, integrity_score - 10) WHERE id=?", (sid,))
+        cx.commit()
         
-        token = auth_header[7:]
-        if not auth.verify_admin_token(token):
-            self.send_json(401, {"error": "Session expired"}); return False
-        
-        if require_csrf and not auth.verify_csrf_token(token, self.headers.get("X-CSRF-Token", "")):
-            self.send_json(403, {"error": "Security validation failure (CSRF)"}); return False
-        return True
+    return jsonify({"ok": True})
 
-    def do_GET(self):
-        """Route read-only requests to static assets or administrative data providers."""
-        try:
-            url = urlparse(self.path); path = url.path
-            
-            # --- Static Asset Pipeline ---
-            if path == "/": path = "/index.html"
-            if path.endswith((".html", ".css", ".js", ".png", ".jpg", ".ico")):
-                self.serve_static_file(path); return
+# --- Admin API ---
 
-            # --- Administrative Intelligence API ---
-            if path.startswith("/api/admin/"):
-                if not self.validate_administrative_session(): return
-                
-                if path == "/api/admin/sessions":
-                    with db.DB_LOCK:
-                        conn = db.db_connect()
-                        try:
-                            rows = conn.execute("SELECT m.*, s.integrity_score, (SELECT SUM(correct)*1.0/COUNT(*) FROM session_answers WHERE token=m.token) as score FROM session_meta m LEFT JOIN sessions s ON s.token=m.token ORDER BY m.started_at DESC").fetchall()
-                            sessions = [dict(r) for r in rows]
-                            for s in sessions: s["durationSec"] = (s["completed_at"] or int(time.time())) - s["started_at"]
-                            self.send_json(200, sessions)
-                        finally:
-                            conn.close()
-                    return
+@app.route("/api/admin/sessions", methods=["GET"])
+@admin_required
+def admin_sessions():
+    with db.get_db() as cx:
+        rows = cx.execute("SELECT * FROM sessions ORDER BY started_at DESC").fetchall()
+    sessions = []
+    for r in rows:
+        sessions.append({
+            "id": r["id"],
+            "token": r["id"],
+            "name": r["candidate_email"] or "Anonymous",
+            "started_at": r["started_at"],
+            "durationSec": (r["finished_at"] or time.time()) - r["started_at"],
+            "score": 0.0,
+            "integrity_score": r["integrity_score"]
+        })
+    return jsonify(sessions)
 
-                if path.startswith("/api/admin/session/"):
-                    token = path.split("/")[-1]
-                    with db.DB_LOCK:
-                        conn = db.db_connect()
-                        try:
-                            events = conn.execute("SELECT * FROM session_events WHERE token=? ORDER BY created_at ASC", (token,)).fetchall()
-                            answers = conn.execute("SELECT a.*, q.question_text FROM session_answers a JOIN questions q ON q.id=a.question_id WHERE a.token=?", (token,)).fetchall()
-                            self.send_json(200, {"events": [dict(e) for e in events], "answers": [dict(a) for a in answers]})
-                        finally:
-                            conn.close()
-                    return
+@app.route("/api/admin/session/<sid>", methods=["GET"])
+@admin_required
+def admin_session_detail(sid):
+    with db.get_db() as cx:
+        events = cx.execute("SELECT * FROM flag_events WHERE session_id=? ORDER BY ts ASC", (sid,)).fetchall()
+    return jsonify({
+        "events": [{
+            "type": e["event_type"],
+            "detail": e["detail"],
+            "created_at": e["ts"]
+        } for e in events]
+    })
 
-                if path == "/api/admin/questions":
-                    with db.DB_LOCK:
-                        conn = db.db_connect()
-                        try:
-                            rows = conn.execute("SELECT * FROM questions ORDER BY id DESC").fetchall()
-                            self.send_json(200, [dict(r) for r in rows])
-                        finally:
-                            conn.close()
-                    return
+@app.route("/api/admin/questions", methods=["GET"])
+@admin_required
+def admin_questions():
+    with db.get_db() as cx:
+        rows = cx.execute("SELECT * FROM questions ORDER BY id").fetchall()
+    return jsonify([dict(r) for r in rows])
 
-                if path == "/api/admin/sessions/export":
-                    with db.DB_LOCK:
-                        conn = db.db_connect()
-                        try:
-                            rows = conn.execute("SELECT m.name, m.started_at, m.completed_at, s.integrity_score FROM session_meta m LEFT JOIN sessions s ON s.token=m.token").fetchall()
-                        finally:
-                            conn.close()
-                    out = io.StringIO(); w = csv.writer(out); w.writerow(["Candidate", "Start", "End", "Integrity"])
-                    for r in rows: w.writerow([r[0], time.ctime(r[1]), time.ctime(r[2]) if r[2] else "Active", r[3]])
-                    self.send_response(200); self.send_header("Content-Type", "text/csv"); self.send_header("Content-Disposition", "attachment; filename=3d_ambi_sessions.csv"); self.end_headers(); self.wfile.write(out.getvalue().encode("utf-8")); return
+@app.route("/api/admin/question", methods=["POST"])
+@admin_required
+def add_question():
+    body = request.get_json()
+    with db.get_db() as cx:
+        cx.execute("INSERT INTO questions (text, options) VALUES (?,?)",
+                   (body["question"], json.dumps(body["options"])))
+        cx.commit()
+    return jsonify({"ok": True})
 
-            self.send_error(404)
-        except Exception: logger.error(traceback.format_exc()); self.send_error(500)
+@app.route("/api/admin/sessions/export", methods=["GET"])
+@admin_required
+def export_sessions():
+    with db.get_db() as cx:
+        rows = cx.execute("SELECT * FROM sessions").fetchall()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Name", "Started At", "Finished At", "Integrity"])
+    for r in rows:
+        writer.writerow([r["id"], r["candidate_email"] or "Anonymous", 
+                         time.ctime(r["started_at"]), 
+                         time.ctime(r["finished_at"]) if r["finished_at"] else "Active",
+                         r["integrity_score"]])
+    
+    resp = make_response(output.getvalue())
+    resp.headers["Content-Disposition"] = "attachment; filename=sessions.csv"
+    resp.headers["Content-Type"] = "text/csv"
+    return resp
 
-    def is_rate_limited(self, ip: str) -> bool:
-        now = datetime.now()
-        window = timedelta(seconds=Config.AUTH_WINDOW_SEC)
-        
-        if ip not in LOGIN_ATTEMPTS:
-            LOGIN_ATTEMPTS[ip] = deque()
-            
-        # Remove old attempts
-        while LOGIN_ATTEMPTS[ip] and LOGIN_ATTEMPTS[ip][0] < now - window:
-            LOGIN_ATTEMPTS[ip].popleft()
-            
-        if len(LOGIN_ATTEMPTS[ip]) >= Config.AUTH_LIMIT:
-            return True
-        
-        LOGIN_ATTEMPTS[ip].append(now)
-        return False
-
-    def do_POST(self):
-        """Route state-modifying requests to auth or session controllers."""
-        try:
-            cl = int(self.headers.get('Content-Length', 0)); body = json.loads(self.rfile.read(cl).decode('utf-8')) if cl else {}
-            path = urlparse(self.path).path
-            ip = self.client_address[0]
-
-            if path == "/api/admin/login":
-                if self.is_rate_limited(ip):
-                    self.send_json(429, {"error": "Too many requests. Please try again later."})
-                    return
-                res = auth.authenticate_admin(body.get("username"), body.get("password"))
-                if res: self.send_json(200, {"token": res[0], "csrfToken": res[1]})
-                else: self.send_json(401, {"error": "Invalid credentials"})
-                return
-
-            if path == "/api/session/start":
-                self.send_json(200, {"sessionToken": logic.create_session(body.get("name", "Anonymous Candidate"))}); return
-
-            if path == "/api/session/event":
-                logic.record_event(
-                    body.get("sessionToken"),
-                    body.get("type", "unknown"),
-                    body.get("detail", "")
-                )
-                self.send_json(200, {"status": "ok"})
-                return
-
-            if path == "/api/session/next":
-
-                tok = body.get("sessionToken"); s = logic.get_session(tok)
-                if not s: self.send_json(404, {"error": "invalid_session"}); return
-                idx = s["next_index"]; order = json.loads(s["question_order_json"])
-                if idx >= len(order): self.send_json(400, {"error": "assessment_complete"}); return
-                with db.DB_LOCK:
-                    conn = db.db_connect()
-                    try:
-                        q = conn.execute("SELECT * FROM questions WHERE id=?", (order[idx],)).fetchone()
-                    finally:
-                        conn.close()
-                payload = {"questionId": q["id"], "question": q["question_text"], "options": json.loads(q["options_json"]), "totalQuestions": len(order), "decoyLeft": {"question": q["decoy_left_text"], "options": []}, "decoyRight": {"question": q["decoy_right_text"], "options": []}}
-                enc = logic.encrypt_data(payload, logic.derive_session_key(tok))
-                self.send_json(200, {**enc, "questionId": q["id"], "totalQuestions": len(order)}); return
-
-            if path == "/api/session/answer":
-                ok, msg = logic.record_answer(body.get("sessionToken"), body.get("questionId"), body.get("answerIndex"), body.get("timeMs"), body.get("headCompliance"), body.get("proof"))
-                self.send_json(200 if ok else 400, {"status": msg if ok else msg}); return
-
-            if path == "/api/session/complete":
-                logic.complete_session(body.get("sessionToken"))
-                self.send_json(200, {"status": "ok"}); return
-
-            # --- Administrative Command API ---
-            if path.startswith("/api/admin/"):
-                if not self.validate_administrative_session(require_csrf=True): return
-                if path == "/api/admin/question":
-                    with db.DB_LOCK:
-                        conn = db.db_connect()
-                        try:
-                            conn.execute("INSERT INTO questions (subject, question_text, options_json, correct_index, decoy_left_text, decoy_right_text, created_at) VALUES (?,?,?,?,?,?,?)",
-                                         (body["subject"], body["question"], json.dumps(body["options"]), body["correctIndex"], body["decoyLeft"], body["decoyRight"], int(time.time())))
-                            conn.commit()
-                        finally:
-                            conn.close()
-                    self.send_json(200, {"status": "ok"}); return
-
-            self.send_error(404)
-        except Exception: logger.error(traceback.format_exc()); self.send_error(500)
-
-    def serve_static_file(self, path: str):
-        """Safely stream assets from the localized frontend store."""
-        try:
-            root = os.path.dirname(os.path.dirname(__file__))
-            fpath = os.path.join(root, "frontend", path.lstrip("/"))
-            if not os.path.exists(fpath): self.send_error(404); return
-            with open(fpath, "rb") as f:
-                self.send_response(200)
-                if path.endswith(".html"): self.send_header("Content-Type", "text/html")
-                elif path.endswith(".css"): self.send_header("Content-Type", "text/css")
-                elif path.endswith(".js"): self.send_header("Content-Type", "application/javascript")
-                self.end_headers(); self.wfile.write(f.read())
-        except Exception: self.send_error(500)
+@app.route("/<path:path>")
+def static_proxy(path):
+    return send_from_directory(app.static_folder, path)
 
 if __name__ == "__main__":
     db.init_db()
-    # Seed identity if required
-    with db.DB_LOCK:
-        conn = db.db_connect()
-        try:
-            if not conn.execute("SELECT id FROM admin_users WHERE username=?", (Config.ADMIN_USER,)).fetchone():
-                h, s = auth.hash_password(Config.ADMIN_PASS)
-                conn.execute("INSERT INTO admin_users (username, password_hash, salt, created_at) VALUES (?,?,?,?)", (Config.ADMIN_USER, h, s, int(time.time())))
-                conn.commit()
-        finally:
-            conn.close()
-    
-    server = ThreadingHTTPServer(('', Config.PORT), AmbiRequestHandler)
-    logger.info(f"💎 3D Ambi Engine ready at http://localhost:{Config.PORT}")
-    server.serve_forever()
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
