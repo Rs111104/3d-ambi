@@ -77,9 +77,8 @@ def admin_required(f):
 @app.before_request
 def check_csrf_header():
     if request.method in ("POST", "PATCH", "DELETE"):
-        if request.content_type == "application/json":
-            if request.headers.get("X-Requested-With") != "XMLHttpRequest":
-                abort(403)
+        if request.headers.get("X-Requested-With") != "XMLHttpRequest":
+            abort(403)
 
 @app.route("/")
 def index():
@@ -129,8 +128,11 @@ def start_session():
 @app.route("/api/session/consent", methods=["POST"])
 def session_consent():
     sid = request.cookies.get("session_id")
-    if not db.session_get(sid):
+    sess = db.session_get(sid)
+    if not sess:
         return jsonify({"error": "unauthorized"}), 403
+    if sess.get("finished_at"):
+        return jsonify({"error": "session finished"}), 403
     db.session_upsert(sid, consented_at=time.time())
     return jsonify({"ok": True})
 
@@ -141,9 +143,12 @@ def get_question():
     if not sess:
         return jsonify({"error": "unauthorized"}), 403
     
+    if sess.get("finished_at"):
+        return jsonify({"done": True})
+    
     idx = sess["q"]
     with db.get_db() as cx:
-        questions = cx.execute("SELECT id, text, options FROM questions ORDER BY id").fetchall()
+        questions = cx.execute("SELECT id, subject, text, options FROM questions ORDER BY id").fetchall()
     
     if idx >= len(questions):
         db.session_upsert(sid, finished_at=time.time())
@@ -152,6 +157,7 @@ def get_question():
     q = questions[idx]
     return jsonify({
         "id": q["id"],
+        "subject": q["subject"],
         "text": q["text"],
         "options": json.loads(q["options"]),
         "index": idx,
@@ -176,6 +182,9 @@ def submit_answer():
     if not sess:
         return jsonify({"error": "unauthorized"}), 403
     
+    if sess.get("finished_at"):
+        return jsonify({"error": "session finished"}), 403
+    
     body = request.get_json(silent=True) or {}
     q_id = body.get("questionId")
     answer = body.get("answer")
@@ -197,6 +206,19 @@ def log_event():
     detail = body.get("detail")
     duration = body.get("duration_ms")
     
+    if not event_type:
+        return jsonify({"ok": True})
+        
+    # Cooldown check: ignore duplicate events within 5 seconds to prevent write amplification
+    with db.get_db() as cx:
+        recent = cx.execute(
+            "SELECT 1 FROM flag_events WHERE session_id=? AND event_type=? AND ts > ?",
+            (sid, event_type, time.time() - 5)
+        ).fetchone()
+        
+    if recent:
+        return jsonify({"ok": True})
+    
     db.log_flag(sid, event_type, detail, duration)
     logger.warning("flag event", extra={"session_id": sid, "type": event_type, "detail": detail})
     
@@ -216,12 +238,14 @@ def admin_sessions():
         rows = cx.execute("SELECT * FROM sessions ORDER BY started_at DESC").fetchall()
     sessions = []
     for r in rows:
+        started = r["started_at"] or time.time()
+        finished = r["finished_at"] or time.time()
         sessions.append({
             "id": r["id"],
             "token": r["id"],
             "name": r["candidate_email"] or "Anonymous",
-            "started_at": r["started_at"],
-            "durationSec": (r["finished_at"] or time.time()) - r["started_at"],
+            "started_at": r["started_at"] or time.time(),
+            "durationSec": finished - started,
             "score": 0.0,
             "integrity_score": r["integrity_score"]
         })
@@ -250,10 +274,55 @@ def admin_questions():
 @app.route("/api/admin/question", methods=["POST"])
 @admin_required
 def add_question():
-    body = request.get_json()
+    body = request.get_json() or {}
+    subject = body.get("subject", "General")
+    text = body.get("question")
+    options = body.get("options", [])
+    correct_index = int(body.get("correctIndex", 0))
+    
     with db.get_db() as cx:
-        cx.execute("INSERT INTO questions (text, options) VALUES (?,?)",
-                   (body["question"], json.dumps(body["options"])))
+        cx.execute("INSERT INTO questions (subject, text, options, correct_index) VALUES (?,?,?,?)",
+                   (subject, text, json.dumps(options), correct_index))
+        cx.commit()
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/question/<int:qid>", methods=["PATCH"])
+@admin_required
+def edit_question(qid):
+    body = request.get_json() or {}
+    subject = body.get("subject", "General")
+    text = body.get("question")
+    options = body.get("options", [])
+    correct_index = int(body.get("correctIndex", 0))
+    
+    with db.get_db() as cx:
+        cx.execute("UPDATE questions SET subject=?, text=?, options=?, correct_index=? WHERE id=?",
+                   (subject, text, json.dumps(options), correct_index, qid))
+        cx.commit()
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/question/<int:qid>", methods=["DELETE"])
+@admin_required
+def delete_question(qid):
+    with db.get_db() as cx:
+        cx.execute("DELETE FROM questions WHERE id=?", (qid,))
+        cx.commit()
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/settings", methods=["GET"])
+@admin_required
+def get_settings():
+    with db.get_db() as cx:
+        rows = cx.execute("SELECT key, value FROM settings").fetchall()
+    return jsonify({r["key"]: r["value"] for r in rows})
+
+@app.route("/api/admin/settings", methods=["POST"])
+@admin_required
+def save_settings():
+    body = request.get_json() or {}
+    with db.get_db() as cx:
+        for k, v in body.items():
+            cx.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (k, str(v)))
         cx.commit()
     return jsonify({"ok": True})
 
@@ -267,9 +336,11 @@ def export_sessions():
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Started At", "Finished At", "Integrity"])
     for r in rows:
+        started_str = time.ctime(r["started_at"]) if r["started_at"] else "Unknown"
+        finished_str = time.ctime(r["finished_at"]) if r["finished_at"] else ("Active" if r["started_at"] else "Unstarted")
         writer.writerow([r["id"], r["candidate_email"] or "Anonymous", 
-                         time.ctime(r["started_at"]), 
-                         time.ctime(r["finished_at"]) if r["finished_at"] else "Active",
+                         started_str, 
+                         finished_str,
                          r["integrity_score"]])
     
     resp = make_response(output.getvalue())

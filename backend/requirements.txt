@@ -4,3 +4,4 @@ bcrypt>=4.2
 flask-limiter>=3.5
 flask-wtf>=1.2
 python-dotenv>=1.0.1
+waitress>=3.0.0

@@ -6,12 +6,18 @@ import os
 DB_PATH = os.environ.get("DB_PATH", "exam.db")
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=15.0)
     conn.row_factory = sqlite3.Row
     return conn
 
 def init_db():
     with get_db() as cx:
+        # Check if questions table lacks the subject or correct_index columns
+        try:
+            cx.execute("SELECT subject, correct_index FROM questions LIMIT 1")
+        except sqlite3.OperationalError:
+            cx.execute("DROP TABLE IF EXISTS questions")
+
         cx.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
@@ -38,8 +44,14 @@ def init_db():
         );
         CREATE TABLE IF NOT EXISTS questions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT DEFAULT 'General',
             text TEXT NOT NULL,
-            options TEXT NOT NULL -- JSON list
+            options TEXT NOT NULL, -- JSON list
+            correct_index INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
         );
         """)
         
@@ -47,21 +59,31 @@ def init_db():
         count = cx.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
         if count == 0:
             questions = [
-                ("What is the time complexity of quicksort?", json.dumps(["O(n)", "O(n log n)", "O(n²)", "O(log n)"])),
-                ("Which data structure uses LIFO?", json.dumps(["Queue", "Stack", "Heap", "Tree"]))
+                ("CS", "What is the time complexity of quicksort?", json.dumps(["O(n)", "O(n log n)", "O(n²)", "O(log n)"]), 1),
+                ("CS", "Which data structure uses LIFO?", json.dumps(["Queue", "Stack", "Heap", "Tree"]), 1),
+                ("Science", "What is H2O?", json.dumps(["Water", "Acid", "Salt", "Gas"]), 0),
+                ("History", "Who wrote the Great Gatsby?", json.dumps(["F. Scott Fitzgerald", "Ernest Hemingway", "Mark Twain", "Charles Dickens"]), 0),
+                ("Tech", "Which architectural pattern decouples storage from logic?", json.dumps(["MVC", "Monolith", "Serverless", "Edge"]), 0)
             ]
-            cx.executemany("INSERT INTO questions (text, options) VALUES (?,?)", questions)
-            cx.commit()
+            cx.executemany("INSERT INTO questions (subject, text, options, correct_index) VALUES (?,?,?,?)", questions)
+            
+        # Seed default settings if empty
+        settings_count = cx.execute("SELECT COUNT(*) FROM settings").fetchone()[0]
+        if settings_count == 0:
+            cx.execute("INSERT INTO settings (key, value) VALUES (?,?)", ("inactivity_timeout", "300"))
+            cx.execute("INSERT INTO settings (key, value) VALUES (?,?)", ("integrity_threshold", "80"))
+        
+        cx.commit()
 
 def session_get(sid: str) -> dict | None:
     if not sid: return None
     with get_db() as cx:
         row = cx.execute(
-            "SELECT id, current_q, answers, started_at FROM sessions WHERE id=?", (sid,)
+            "SELECT id, current_q, answers, started_at, finished_at FROM sessions WHERE id=?", (sid,)
         ).fetchone()
     if not row: return None
     return {"id": row[0], "q": row[1],
-            "answers": json.loads(row[2]), "started_at": row[3]}
+            "answers": json.loads(row[2]), "started_at": row[3], "finished_at": row[4]}
 
 def session_upsert(sid: str, **fields):
     with get_db() as cx:

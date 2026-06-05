@@ -189,9 +189,31 @@
         return r.json();
       }
 
+      const lastFlagTimes = {};
+      async function sendFlag(type, detail = '') {
+        const now = Date.now();
+        if (lastFlagTimes[type] && now - lastFlagTimes[type] < 5000) return;
+        lastFlagTimes[type] = now;
+        await api('/api/flag', 'POST', { type, detail });
+      }
+
+      let timerInterval;
+      function startTimer(startedAtMs) {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+          const elapsedSec = Math.floor((Date.now() - startedAtMs) / 1000);
+          const m = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
+          const s = String(elapsedSec % 60).padStart(2, '0');
+          document.getElementById('sessionTimer').textContent = `${m}:${s}`;
+        }, 1000);
+      }
+      function stopTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+      }
+
       async function loadQuestion() {
         const q = await api('/api/question');
-        if (q.done) { show('done'); return; }
+        if (q.done) { stopTimer(); show('done'); return; }
         UI.progress.textContent = `Question ${q.index + 1} of ${q.total}`;
         updateTexture(0, q.text);
         UI.answers.innerHTML = '';
@@ -241,8 +263,8 @@
         }
 
         if (session.active) {
-          if (session.faceCount > 1) api('/api/flag', 'POST', { type: 'multiple_faces', detail: `Detected ${session.faceCount} faces` });
-          if (session.faceCount === 0) api('/api/flag', 'POST', { type: 'no_face' });
+          if (session.faceCount > 1) sendFlag('multiple_faces', `Detected ${session.faceCount} faces`);
+          if (session.faceCount === 0) sendFlag('no_face');
           if (Math.abs(session.currentYaw) > 15) fetchDecoy();
         }
 
@@ -263,7 +285,7 @@
 
       setInterval(() => {
         if (session.active && Date.now() - session.lastBlinkTime > 30000) {
-          api('/api/flag', 'POST', { type: 'no_blink_detected', detail: 'Likely static photo' });
+          sendFlag('no_blink_detected', 'Likely static photo');
         }
       }, 30000);
 
@@ -287,10 +309,11 @@
         session.active = true;
         show('test');
         loadQuestion();
+        startTimer(Date.now());
       };
 
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden && session.active) api('/api/flag', 'POST', { type: 'tab_hidden' });
+        if (document.hidden && session.active) sendFlag('tab_hidden');
       });
 
       UI.consent.onchange = () => {
