@@ -1,6 +1,10 @@
 import os
 import sys
+from dotenv import load_dotenv
 from waitress import serve
+
+# Load env variables
+load_dotenv()
 
 # Add backend to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
@@ -13,7 +17,7 @@ if __name__ == "__main__":
         db.init_db()
     
     port = int(os.environ.get("PORT", 8080))
-    print(f"💎 3D Ambi Engine starting on http://localhost:{port}")
+    print(f"[*] 3D Ambi Engine starting on http://localhost:{port}")
     print(f"Admin Username: {os.environ.get('ADMIN_USER')}")
     print("Admin Password: admin123")
     

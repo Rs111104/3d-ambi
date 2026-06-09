@@ -108,7 +108,8 @@
         decoyFetched: false,
         decoyText: null,
         faceDetected: false,
-        faceCount: 0
+        faceCount: 0,
+        frameCount: 0  // M1: Deterministic frame counter for FaceMesh
       };
 
       // WebGL Check
@@ -272,9 +273,11 @@
         UI.btn.textContent = !session.faceDetected ? 'Align Face to Start' : (!UI.consent.checked ? 'Accept Consent' : 'Begin Assessment');
       });
 
+      // M1: Process every 6th frame (~5 FPS at 30 FPS camera) instead of non-deterministic timing
       const cam = new Camera(UI.video, {
         onFrame: async () => {
-          if (Date.now() % 200 < 20) await fm.send({ image: UI.video });
+          session.frameCount++;
+          if (session.frameCount % 6 === 0) await fm.send({ image: UI.video });
         },
         width: 1280, height: 720
       });
@@ -304,12 +307,14 @@
       }
 
       UI.btn.onclick = async () => {
-        await api('/api/session/start', 'POST');
+        const startRes = await api('/api/session/start', 'POST');
         await api('/api/session/consent', 'POST');
         session.active = true;
+        // M6: Use server-side start timestamp for accurate timer
+        const startedAt = startRes.started_at ? startRes.started_at * 1000 : Date.now();
         show('test');
         loadQuestion();
-        startTimer(Date.now());
+        startTimer(startedAt);
       };
 
       document.addEventListener('visibilitychange', () => {
