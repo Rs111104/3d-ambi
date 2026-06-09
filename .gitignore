@@ -9,6 +9,8 @@ venv/
 # Database
 backend/data.db
 data.db
+*.db
+*.sqlite
 
 # IDEs
 .vscode/
