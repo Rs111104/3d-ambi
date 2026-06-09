@@ -28,11 +28,17 @@ def get_db():
 
 def init_db():
     with get_db() as cx:
-        # Check if questions table lacks the subject or correct_index columns
+        # Check if questions table lacks the subject, correct_index, decoy_left_text, or decoy_right_text columns
         try:
-            cx.execute("SELECT subject, correct_index FROM questions LIMIT 1")
+            cx.execute("SELECT subject, correct_index, decoy_left_text, decoy_right_text FROM questions LIMIT 1")
         except sqlite3.OperationalError:
             cx.execute("DROP TABLE IF EXISTS questions")
+
+        # Check if sessions table lacks question_order or aes_key columns
+        try:
+            cx.execute("SELECT question_order, aes_key FROM sessions LIMIT 1")
+        except sqlite3.OperationalError:
+            cx.execute("DROP TABLE IF EXISTS sessions")
 
         cx.executescript("""
         CREATE TABLE IF NOT EXISTS sessions (
@@ -44,7 +50,9 @@ def init_db():
             consented_at REAL,
             started_at REAL,
             finished_at REAL,
-            integrity_score INTEGER DEFAULT 100
+            integrity_score INTEGER DEFAULT 100,
+            question_order TEXT,
+            aes_key TEXT
         );
         CREATE TABLE IF NOT EXISTS flag_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +71,9 @@ def init_db():
             subject TEXT DEFAULT 'General',
             text TEXT NOT NULL,
             options TEXT NOT NULL, -- JSON list
-            correct_index INTEGER DEFAULT 0
+            correct_index INTEGER DEFAULT 0,
+            decoy_left_text TEXT,
+            decoy_right_text TEXT
         );
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -75,13 +85,13 @@ def init_db():
         count = cx.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
         if count == 0:
             questions = [
-                ("CS", "What is the time complexity of quicksort?", json.dumps(["O(n)", "O(n log n)", "O(n²)", "O(log n)"]), 1),
-                ("CS", "Which data structure uses LIFO?", json.dumps(["Queue", "Stack", "Heap", "Tree"]), 1),
-                ("Science", "What is H2O?", json.dumps(["Water", "Acid", "Salt", "Gas"]), 0),
-                ("History", "Who wrote the Great Gatsby?", json.dumps(["F. Scott Fitzgerald", "Ernest Hemingway", "Mark Twain", "Charles Dickens"]), 0),
-                ("Tech", "Which architectural pattern decouples storage from logic?", json.dumps(["MVC", "Monolith", "Serverless", "Edge"]), 0)
+                ("CS", "What is the time complexity of quicksort?", json.dumps(["O(n)", "O(n log n)", "O(n²)", "O(log n)"]), 1, None, None),
+                ("CS", "Which data structure uses LIFO?", json.dumps(["Queue", "Stack", "Heap", "Tree"]), 1, None, None),
+                ("Science", "What is H2O?", json.dumps(["Water", "Acid", "Salt", "Gas"]), 0, None, None),
+                ("History", "Who wrote the Great Gatsby?", json.dumps(["F. Scott Fitzgerald", "Ernest Hemingway", "Mark Twain", "Charles Dickens"]), 0, None, None),
+                ("Tech", "Which architectural pattern decouples storage from logic?", json.dumps(["MVC", "Monolith", "Serverless", "Edge"]), 0, None, None)
             ]
-            cx.executemany("INSERT INTO questions (subject, text, options, correct_index) VALUES (?,?,?,?)", questions)
+            cx.executemany("INSERT INTO questions (subject, text, options, correct_index, decoy_left_text, decoy_right_text) VALUES (?,?,?,?,?,?)", questions)
             
         # Seed default settings if empty
         settings_count = cx.execute("SELECT COUNT(*) FROM settings").fetchone()[0]
@@ -98,16 +108,19 @@ def session_get(sid: str) -> dict | None:
     if not sid: return None
     with get_db() as cx:
         row = cx.execute(
-            "SELECT id, current_q, answers, started_at, finished_at FROM sessions WHERE id=?", (sid,)
+            "SELECT id, current_q, answers, started_at, finished_at, question_order, aes_key FROM sessions WHERE id=?", (sid,)
         ).fetchone()
         if not row: return None
         return {"id": row[0], "q": row[1],
-                "answers": json.loads(row[2]), "started_at": row[3], "finished_at": row[4]}
+                "answers": json.loads(row[2]), "started_at": row[3], "finished_at": row[4],
+                "question_order": json.loads(row[5]) if row[5] else None,
+                "aes_key": row[6]}
 
 # C2: Whitelist of valid session columns to prevent SQL injection via key names
 _SESSION_COLUMNS = frozenset({
     "exam_id", "candidate_email", "current_q", "answers",
-    "consented_at", "started_at", "finished_at", "integrity_score"
+    "consented_at", "started_at", "finished_at", "integrity_score",
+    "question_order", "aes_key"
 })
 
 def session_upsert(sid: str, **fields):

@@ -45,6 +45,12 @@
         <video id="previewVideo" class="camera-preview" playsinline muted autoplay></video>
         
         <div class="mt-16">
+          <label style="font-weight:600">Candidate Email</label>
+          <input id="candidateEmail" class="input mt-10" type="email" placeholder="candidate@example.com" required />
+          <p id="emailError" class="error-text mt-10" style="display:none"></p>
+        </div>
+
+        <div class="mt-16">
           <p class="small-text">This exam uses head-pose monitoring to verify academic integrity. Your video is processed locally and NOT uploaded. Suspicious activities (tab switches, multiple faces) will be flagged.</p>
           <label class="mt-10" style="display:flex; align-items:center; gap:8px; font-size:0.875rem; cursor:pointer;">
             <input type="checkbox" id="consentCheck"> I consent to biometric monitoring for this exam.
@@ -76,256 +82,21 @@
       <div class="card" style="text-align: center;">
         <h2>Assessment Complete</h2>
         <p class="mt-16">Your responses have been securely submitted.</p>
-        <button class="btn mt-16" onclick="location.reload()">Finish</button>
+        <button class="btn mt-16" id="finishBtn">Finish</button>
       </div>
     </section>
   </main>
+
+  <div id="biometric-loader" class="loader-overlay">
+    <div class="spinner"></div>
+    <p style="font-size:1.1rem; font-weight:600;">Loading biometric engine...</p>
+    <p style="font-size:0.85rem; color:var(--text-secondary); margin-top:0.5rem;">Initializing MediaPipe FaceMesh</p>
+  </div>
 
   <video id="trackingVideo" playsinline muted style="display:none"></video>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
-  <script>
-    (() => {
-      const UI = {
-        screens: { start: 'screen-start', test: 'screen-test', done: 'screen-complete' },
-        checklist: { cam: document.getElementById('checkCamera'), face: document.getElementById('checkFace'), light: document.getElementById('checkLighting') },
-        btn: document.getElementById('beginBtn'),
-        canvas: document.getElementById('secureCanvas'),
-        status: document.getElementById('statusMessage'),
-        dot: document.getElementById('statusDot'),
-        progress: document.getElementById('progressCounter'),
-        answers: document.getElementById('answerGrid'),
-        video: document.getElementById('trackingVideo'),
-        consent: document.getElementById('consentCheck')
-      };
-
-      let session = {
-        active: false,
-        currentYaw: 0,
-        blendFactor: 0,
-        lastBlinkTime: Date.now(),
-        decoyFetched: false,
-        decoyText: null,
-        faceDetected: false,
-        faceCount: 0,
-        frameCount: 0  // M1: Deterministic frame counter for FaceMesh
-      };
-
-      // WebGL Check
-      function checkWebGL() {
-        const canvas = document.createElement("canvas");
-        const gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
-        if (!gl) {
-          document.getElementById("webgl-error").style.display = "block";
-          return false;
-        }
-        return true;
-      }
-      if (!checkWebGL()) return;
-
-      // WebGL Initialization
-      const gl = UI.canvas.getContext('webgl');
-      const vertSource = `attribute vec2 p; varying vec2 v; void main() { v = p * 0.5 + 0.5; gl_Position = vec4(p, 0.0, 1.0); }`;
-      const fragSource = `
-        precision highp float;
-        varying vec2 v;
-        uniform sampler2D realTex, decoyTex;
-        uniform float blend;
-        void main() {
-          vec4 real = texture2D(realTex, v);
-          vec4 decoy = texture2D(decoyTex, v);
-          gl_FragColor = mix(real, decoy, blend);
-        }
-      `;
-
-      function createShader(gl, type, source) {
-        const s = gl.createShader(type);
-        gl.shaderSource(s, source); gl.compileShader(s);
-        return s;
-      }
-
-      const prog = gl.createProgram();
-      gl.attachShader(prog, createShader(gl, gl.VERTEX_SHADER, vertSource));
-      gl.attachShader(prog, createShader(gl, gl.FRAGMENT_SHADER, fragSource));
-      gl.linkProgram(prog); gl.useProgram(prog);
-
-      const buffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1,1,1]), gl.STATIC_DRAW);
-      const pLoc = gl.getAttribLocation(prog, 'p');
-      gl.enableVertexAttribArray(pLoc); gl.vertexAttribPointer(pLoc, 2, gl.FLOAT, false, 0, 0);
-
-      const unis = {
-        blend: gl.getUniformLocation(prog, 'blend'),
-        real: gl.getUniformLocation(prog, 'realTex'),
-        decoy: gl.getUniformLocation(prog, 'decoyTex')
-      };
-      gl.uniform1i(unis.real, 0); gl.uniform1i(unis.decoy, 1);
-      const textures = [gl.createTexture(), gl.createTexture()];
-
-      const tCanvas = document.createElement('canvas');
-      const tCtx = tCanvas.getContext('2d');
-      tCanvas.width = 1280; tCanvas.height = 720;
-
-      function updateTexture(slot, text) {
-        tCtx.fillStyle = '#fff'; tCtx.fillRect(0, 0, 1280, 720);
-        tCtx.fillStyle = '#0f172a'; tCtx.font = 'bold 48px Inter';
-        tCtx.textAlign = 'center';
-        tCtx.fillText(text, 640, 360);
-        
-        gl.activeTexture(gl.TEXTURE0 + slot);
-        gl.bindTexture(gl.TEXTURE_2D, textures[slot]);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, tCanvas);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      }
-
-      async function api(path, method = 'GET', body = null) {
-        const headers = { 'X-Requested-With': 'XMLHttpRequest' };
-        if (body) headers['Content-Type'] = 'application/json';
-        const r = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : null });
-        return r.json();
-      }
-
-      const lastFlagTimes = {};
-      async function sendFlag(type, detail = '') {
-        const now = Date.now();
-        if (lastFlagTimes[type] && now - lastFlagTimes[type] < 5000) return;
-        lastFlagTimes[type] = now;
-        await api('/api/flag', 'POST', { type, detail });
-      }
-
-      let timerInterval;
-      function startTimer(startedAtMs) {
-        if (timerInterval) clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-          const elapsedSec = Math.floor((Date.now() - startedAtMs) / 1000);
-          const m = String(Math.floor(elapsedSec / 60)).padStart(2, '0');
-          const s = String(elapsedSec % 60).padStart(2, '0');
-          document.getElementById('sessionTimer').textContent = `${m}:${s}`;
-        }, 1000);
-      }
-      function stopTimer() {
-        if (timerInterval) clearInterval(timerInterval);
-      }
-
-      async function loadQuestion() {
-        const q = await api('/api/question');
-        if (q.done) { stopTimer(); show('done'); return; }
-        UI.progress.textContent = `Question ${q.index + 1} of ${q.total}`;
-        updateTexture(0, q.text);
-        UI.answers.innerHTML = '';
-        q.options.forEach((opt, i) => {
-          const b = document.createElement('button');
-          b.className = 'btn';
-          b.textContent = opt;
-          b.onclick = () => submit(q.id, opt);
-          UI.answers.appendChild(b);
-        });
-      }
-
-      async function submit(qId, val) {
-        await api('/api/answer', 'POST', { questionId: qId, answer: val });
-        loadQuestion();
-      }
-
-      async function fetchDecoy() {
-        if (session.decoyFetched) return;
-        session.decoyFetched = true;
-        const d = await api('/api/decoy');
-        session.decoyText = d.text;
-        updateTexture(1, d.text);
-      }
-
-      const fm = new FaceMesh({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
-      fm.setOptions({ maxNumFaces: 2, refineLandmarks: true, minDetectionConfidence: 0.5 });
-      
-      fm.onResults(res => {
-        const faces = res.multiFaceLandmarks || [];
-        session.faceDetected = faces.length > 0;
-        session.faceCount = faces.length;
-        
-        UI.checklist.face.classList.toggle('ok', session.faceDetected);
-        UI.checklist.face.querySelector('.icon').textContent = session.faceDetected ? '✅' : '⭕';
-
-        if (session.faceDetected) {
-          const lms = faces[0];
-          const yaw = (lms[1].x - (lms[33].x + lms[263].x)/2) / (lms[263].x - lms[33].x) * 50;
-          session.currentYaw = yaw;
-
-          const ear = lms[145].y - lms[159].y;
-          if (ear < 0.012) session.lastBlinkTime = Date.now();
-
-          UI.checklist.light.classList.add('ok');
-          UI.checklist.light.querySelector('.icon').textContent = '✅';
-        }
-
-        if (session.active) {
-          if (session.faceCount > 1) sendFlag('multiple_faces', `Detected ${session.faceCount} faces`);
-          if (session.faceCount === 0) sendFlag('no_face');
-          if (Math.abs(session.currentYaw) > 15) fetchDecoy();
-        }
-
-        UI.btn.disabled = !session.faceDetected || !UI.consent.checked;
-        UI.btn.textContent = !session.faceDetected ? 'Align Face to Start' : (!UI.consent.checked ? 'Accept Consent' : 'Begin Assessment');
-      });
-
-      // M1: Process every 6th frame (~5 FPS at 30 FPS camera) instead of non-deterministic timing
-      const cam = new Camera(UI.video, {
-        onFrame: async () => {
-          session.frameCount++;
-          if (session.frameCount % 6 === 0) await fm.send({ image: UI.video });
-        },
-        width: 1280, height: 720
-      });
-      cam.start().then(() => {
-        UI.checklist.cam.classList.add('ok');
-        UI.checklist.cam.querySelector('.icon').textContent = '✅';
-      });
-
-      setInterval(() => {
-        if (session.active && Date.now() - session.lastBlinkTime > 30000) {
-          sendFlag('no_blink_detected', 'Likely static photo');
-        }
-      }, 30000);
-
-      function loop() {
-        const targetBlend = Math.max(0, Math.min(1, (Math.abs(session.currentYaw) - 10) / 20));
-        session.blendFactor += (targetBlend - session.blendFactor) * 0.1;
-        gl.uniform1f(unis.blend, session.blendFactor);
-        gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
-        requestAnimationFrame(loop);
-      }
-      loop();
-
-      function show(id) {
-        Object.values(UI.screens).forEach(s => document.getElementById(s).classList.remove('active'));
-        document.getElementById(UI.screens[id]).classList.add('active');
-      }
-
-      UI.btn.onclick = async () => {
-        const startRes = await api('/api/session/start', 'POST');
-        await api('/api/session/consent', 'POST');
-        session.active = true;
-        // M6: Use server-side start timestamp for accurate timer
-        const startedAt = startRes.started_at ? startRes.started_at * 1000 : Date.now();
-        show('test');
-        loadQuestion();
-        startTimer(startedAt);
-      };
-
-      document.addEventListener('visibilitychange', () => {
-        if (document.hidden && session.active) sendFlag('tab_hidden');
-      });
-
-      UI.consent.onchange = () => {
-        UI.btn.disabled = !session.faceDetected || !UI.consent.checked;
-        UI.btn.textContent = !session.faceDetected ? 'Align Face to Start' : (!UI.consent.checked ? 'Accept Consent' : 'Begin Assessment');
-      };
-    })();
-  </script>
+  <script src="candidate.js"></script>
 </body>
 </html>

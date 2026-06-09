@@ -7,11 +7,14 @@ import logging
 import bcrypt
 import io
 import csv
+import base64
+import re
 from flask import Flask, request, jsonify, send_from_directory, redirect, abort, make_response
 from functools import wraps
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 load_dotenv()
 
@@ -50,8 +53,24 @@ FLASK_SECRET = _require_env("FLASK_SECRET")
 # C3: Detect if running behind HTTPS; default to False for local HTTP deployment
 IS_SECURE = os.environ.get("SECURE_COOKIES", "false").lower() == "true"
 
+# I6: HTTPS warning in production
+if not IS_SECURE and (os.environ.get("RENDER") or os.environ.get("PRODUCTION")):
+    logger.warning("SECURITY WARNING: Running in production/Render with SECURE_COOKIES=false! Admin and session cookies are not marked secure.")
+
 app = Flask(__name__, static_folder="../frontend")
 app.secret_key = FLASK_SECRET
+
+# M4 AES payload encryption helper
+def encrypt_payload(data: dict, hex_key: str) -> dict:
+    key = bytes.fromhex(hex_key)
+    aesgcm = AESGCM(key)
+    nonce = os.urandom(12)
+    plaintext = json.dumps(data).encode('utf-8')
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+    return {
+        "nonce": base64.b64encode(nonce).decode('utf-8'),
+        "ciphertext": base64.b64encode(ciphertext).decode('utf-8')
+    }
 
 # Rate Limiter
 limiter = Limiter(
@@ -91,6 +110,16 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # H5: Strict CSP header (removed unsafe-inline for scripts since they are externalized)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' cdn.jsdelivr.net fonts.googleapis.com; "
+        "style-src 'self' 'unsafe-inline' fonts.googleapis.com fonts.gstatic.com; "
+        "font-src fonts.gstatic.com; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'"
+    )
     return response
 
 @app.route("/")
@@ -139,14 +168,39 @@ def admin_logout():
     resp.delete_cookie("admin_token")
     return resp
 
+# H4 public settings route
+@app.route("/api/settings", methods=["GET"])
+def public_settings():
+    with db.get_db() as cx:
+        row = cx.execute("SELECT value FROM settings WHERE key=?", ("inactivity_timeout",)).fetchone()
+    timeout = int(row[0]) if row else 300
+    return jsonify({"inactivity_timeout": timeout})
+
 @app.route("/api/session/start", methods=["POST"])
 @limiter.limit("3 per 10 minutes")
 def start_session():
+    # M5 email capture and validation
+    body = request.get_json(silent=True) or {}
+    email = body.get("email", "").strip()
+    if not email or not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({"error": "Invalid email address"}), 400
+
+    # M1 per-session question order randomization
+    with db.get_db() as cx:
+        rows = cx.execute("SELECT id FROM questions ORDER BY id").fetchall()
+    q_ids = [r["id"] for r in rows]
+    import random
+    random.shuffle(q_ids)
+
+    # M4 AES key generation
+    aes_key = secrets.token_hex(32)
+
     sid = secrets.token_urlsafe(32)
     now = time.time()
-    db.session_upsert(sid, started_at=now)
-    logger.info("session started", extra={"session_id": sid})
-    resp = jsonify({"ok": True, "session_id": sid, "started_at": now})
+    db.session_upsert(sid, started_at=now, candidate_email=email,
+                      question_order=json.dumps(q_ids), aes_key=aes_key)
+    logger.info("session started", extra={"session_id": sid, "email": email})
+    resp = jsonify({"ok": True, "session_id": sid, "started_at": now, "key": aes_key})
     resp.set_cookie("session_id", sid, httponly=True, samesite="Strict", secure=IS_SECURE)
     return resp
 
@@ -162,6 +216,7 @@ def session_consent():
     return jsonify({"ok": True})
 
 @app.route("/api/question", methods=["GET"])
+@limiter.limit("60 per minute")
 def get_question():
     sid = request.cookies.get("session_id")
     sess = db.session_get(sid)
@@ -172,32 +227,79 @@ def get_question():
         return jsonify({"done": True})
     
     idx = sess["q"]
-    with db.get_db() as cx:
-        questions = cx.execute("SELECT id, subject, text, options FROM questions ORDER BY id").fetchall()
+    question_order = sess["question_order"]
     
-    if idx >= len(questions):
+    if not question_order or idx >= len(question_order):
         db.session_upsert(sid, finished_at=time.time())
         return jsonify({"done": True})
     
-    q = questions[idx]
+    q_id = question_order[idx]
+    with db.get_db() as cx:
+        q = cx.execute("SELECT id, subject, text, options FROM questions WHERE id=?", (q_id,)).fetchone()
+    
+    if not q:
+        db.session_upsert(sid, finished_at=time.time())
+        return jsonify({"done": True})
+
+    # M4 AES encryption for questions
+    question_data = {
+        "text": q["text"],
+        "options": json.loads(q["options"])
+    }
+    encrypted = encrypt_payload(question_data, sess["aes_key"])
+    
     return jsonify({
         "id": q["id"],
         "subject": q["subject"],
-        "text": q["text"],
-        "options": json.loads(q["options"]),
         "index": idx,
-        "total": len(questions)
+        "total": len(question_order),
+        "encrypted": encrypted
     })
 
 @app.route("/api/decoy", methods=["GET"])
+@limiter.limit("60 per minute")
 def get_decoy():
     sid = request.cookies.get("session_id")
-    if not db.session_get(sid):
+    sess = db.session_get(sid)
+    if not sess:
         abort(403)
     db.log_flag(sid, "decoy_requested")
+    
+    idx = sess["q"]
+    question_order = sess["question_order"]
+    
+    decoy_left_text = "Which planet is closest to the Sun?"
+    decoy_left_options = ["Venus", "Mercury", "Earth", "Mars"]
+    decoy_right_text = "What is the primary color of a fire truck?"
+    decoy_right_options = ["Red", "Blue", "Green", "Yellow"]
+
+    if question_order and idx < len(question_order):
+        q_id = question_order[idx]
+        with db.get_db() as cx:
+            q = cx.execute("SELECT options, decoy_left_text, decoy_right_text FROM questions WHERE id=?", (q_id,)).fetchone()
+        if q:
+            opts = json.loads(q["options"])
+            if q["decoy_left_text"]:
+                decoy_left_text = q["decoy_left_text"]
+                decoy_left_options = opts
+            if q["decoy_right_text"]:
+                decoy_right_text = q["decoy_right_text"]
+                decoy_right_options = opts
+
+    decoy_data = {
+        "left": {
+            "text": decoy_left_text,
+            "options": decoy_left_options
+        },
+        "right": {
+            "text": decoy_right_text,
+            "options": decoy_right_options
+        }
+    }
+    # M4 AES encryption for decoy payload
+    encrypted = encrypt_payload(decoy_data, sess["aes_key"])
     return jsonify({
-        "text": "Which planet is closest to the Sun?",
-        "options": ["Venus", "Mercury", "Earth", "Mars"]
+        "encrypted": encrypted
     })
 
 @app.route("/api/answer", methods=["POST"])
@@ -321,6 +423,8 @@ def add_question():
     text = body.get("question")
     options = body.get("options", [])
     correct_index = int(body.get("correctIndex", 0))
+    decoy_left = body.get("decoyLeft", "").strip()
+    decoy_right = body.get("decoyRight", "").strip()
     
     # M5: Input validation
     if not text or not isinstance(text, str) or not text.strip():
@@ -331,8 +435,8 @@ def add_question():
         return jsonify({"error": "correctIndex out of range"}), 400
     
     with db.get_db() as cx:
-        cx.execute("INSERT INTO questions (subject, text, options, correct_index) VALUES (?,?,?,?)",
-                   (subject, text.strip(), json.dumps(options), correct_index))
+        cx.execute("INSERT INTO questions (subject, text, options, correct_index, decoy_left_text, decoy_right_text) VALUES (?,?,?,?,?,?)",
+                   (subject, text.strip(), json.dumps(options), correct_index, decoy_left or None, decoy_right or None))
         cx.commit()
     return jsonify({"ok": True})
 
@@ -344,6 +448,8 @@ def edit_question(qid):
     text = body.get("question")
     options = body.get("options", [])
     correct_index = int(body.get("correctIndex", 0))
+    decoy_left = body.get("decoyLeft", "").strip()
+    decoy_right = body.get("decoyRight", "").strip()
     
     # M5: Input validation
     if not text or not isinstance(text, str) or not text.strip():
@@ -354,8 +460,8 @@ def edit_question(qid):
         return jsonify({"error": "correctIndex out of range"}), 400
     
     with db.get_db() as cx:
-        cx.execute("UPDATE questions SET subject=?, text=?, options=?, correct_index=? WHERE id=?",
-                   (subject, text.strip(), json.dumps(options), correct_index, qid))
+        cx.execute("UPDATE questions SET subject=?, text=?, options=?, correct_index=?, decoy_left_text=?, decoy_right_text=? WHERE id=?",
+                   (subject, text.strip(), json.dumps(options), correct_index, decoy_left or None, decoy_right or None, qid))
         cx.commit()
     return jsonify({"ok": True})
 

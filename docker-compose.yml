@@ -9,6 +9,7 @@ services:
       - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
       - FLASK_SECRET=${FLASK_SECRET}
       - DB_PATH=/data/exam.db
+      - SECURE_COOKIES=${SECURE_COOKIES:-false}  # Set to true for production/HTTPS
     volumes:
       - exam_data:/data
     restart: unless-stopped
